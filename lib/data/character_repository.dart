@@ -84,14 +84,16 @@ class CharacterRepository {
   }
 
   Stream<List<QuoteWithBook>> watchAllQuotesWithBooks(String query) {
-    final queryStream =
+    final joinedQuery =
         (_db.select(
           _db.quotes,
         )..where((t) => t.textContent.contains(query))).join([
           innerJoin(_db.books, _db.books.id.equalsExp(_db.quotes.bookId)),
-        ]).watch();
+        ]);
 
-    return queryStream.map((rows) {
+    joinedQuery.orderBy([OrderingTerm(expression: _db.books.title)]);
+
+    return joinedQuery.watch().map((rows) {
       return rows.map((row) {
         return QuoteWithBook(
           row.readTable(_db.quotes),

@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/database.dart';
@@ -172,12 +173,103 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
               ),
               const Divider(height: 32),
               // Placeholders for future features
-              Text(
-                'Highlights',
-                style: Theme.of(context).textTheme.titleMedium,
+              // Highlights Section
+              StreamBuilder<List<Quote>>(
+                stream: bookRepo.watchHighlightsForBook(book.id),
+                builder: (context, snapshot) {
+                  final highlights = snapshot.data ?? [];
+
+                  return ExpansionTile(
+                    title: Text(
+                      'Highlights',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    subtitle: Text(
+                      '${highlights.length} highlights',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                    initiallyExpanded: false,
+                    childrenPadding: EdgeInsets.zero,
+                    tilePadding: EdgeInsets.zero,
+                    children: [
+                      if (highlights.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8.0),
+                          child: Text('No highlights yet.'),
+                        )
+                      else
+                        ListView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: highlights.length,
+                          itemBuilder: (context, index) {
+                            final highlight = highlights[index];
+                            return InkWell(
+                              onTap: () => _showHighlightDetails(
+                                context,
+                                highlight,
+                                book,
+                              ),
+                              child: Container(
+                                margin: const EdgeInsets.only(bottom: 12),
+                                padding: const EdgeInsets.all(12),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(context).cardColor,
+                                  borderRadius: BorderRadius.circular(8),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: Colors.black.withOpacity(0.05),
+                                      blurRadius: 2,
+                                      offset: const Offset(0, 1),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Container(
+                                      width: 3,
+                                      height: 30,
+                                      color: Theme.of(context).primaryColor,
+                                      margin: const EdgeInsets.only(right: 12),
+                                    ),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            '"${highlight.textContent}"',
+                                            style: const TextStyle(
+                                              fontSize: 13,
+                                              height: 1.3,
+                                            ),
+                                            maxLines: 3,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 6),
+                                          Text(
+                                            DateFormat.yMMMd().format(
+                                              highlight.createdAt,
+                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodySmall
+                                                ?.copyWith(fontSize: 11),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                    ],
+                  );
+                },
               ),
-              const SizedBox(height: 8),
-              const Center(child: Text('No highlights yet.')),
               const SizedBox(height: 16),
               Text(
                 'Characters',
@@ -185,6 +277,101 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
               ),
               const SizedBox(height: 8),
               const Center(child: Text('No characters tagged.')),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showHighlightDetails(BuildContext context, Quote highlight, Book book) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => DraggableScrollableSheet(
+        initialChildSize: 0.4,
+        minChildSize: 0.3,
+        maxChildSize: 0.8,
+        expand: false,
+        builder: (context, scrollController) => SingleChildScrollView(
+          controller: scrollController,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Highlight Details',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
+              const SizedBox(height: 24),
+              Text(
+                '"${highlight.textContent}"',
+                style: const TextStyle(fontSize: 16, height: 1.5),
+              ),
+              const SizedBox(height: 16),
+              if (highlight.characterId != null)
+                // We would need to fetch character name here or have it joined.
+                // For now, let's just show "Assigned to Character" or fetch it?
+                // Since we don't have the character object readily available without a join,
+                // we can skip showing the name for now or do a quick fetch.
+                // Let's skip complex fetching for this iteration to keep it simple.
+                const Row(
+                  children: [
+                    Icon(Icons.person, size: 16, color: Colors.grey),
+                    SizedBox(width: 8),
+                    Text(
+                      'Assigned to a character',
+                      style: TextStyle(color: Colors.grey),
+                    ),
+                  ],
+                ),
+
+              const SizedBox(height: 32),
+              SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: () {
+                    Navigator.pop(context); // Close modal
+                    // Navigate to reader
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => ReaderScreen(
+                          book: book,
+                          initialCfi: highlight.cfi ?? '',
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.arrow_forward),
+                  label: const Text('Go to Page'),
+                ),
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                child: TextButton.icon(
+                  onPressed: () async {
+                    await ref
+                        .read(bookRepositoryProvider)
+                        .deleteHighlight(highlight.id);
+                    if (context.mounted) {
+                      Navigator.pop(context); // Close modal
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Highlight deleted')),
+                      );
+                    }
+                  },
+                  icon: const Icon(Icons.delete, color: Colors.red),
+                  label: const Text(
+                    'Delete Highlight',
+                    style: TextStyle(color: Colors.red),
+                  ),
+                ),
+              ),
             ],
           ),
         ),

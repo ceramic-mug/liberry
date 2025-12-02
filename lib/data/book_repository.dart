@@ -193,17 +193,41 @@ class BookRepository {
     await (_db.delete(_db.quotes)..where((t) => t.bookId.equals(id))).go();
   }
 
-  Future<void> addHighlight(String bookId, String text, String cfi) async {
+  Future<String> addHighlight(String bookId, String text, String cfi) async {
+    final id = const Uuid().v4();
     await _db
         .into(_db.quotes)
         .insert(
           QuotesCompanion.insert(
-            id: const Uuid().v4(),
+            id: id,
             textContent: text,
             bookId: bookId,
             cfi: Value(cfi),
             // characterId is now nullable, so we don't pass it
           ),
         );
+    return id;
+  }
+
+  Stream<List<Quote>> watchHighlightsForBook(String bookId) {
+    return (_db.select(
+      _db.quotes,
+    )..where((t) => t.bookId.equals(bookId))).watch();
+  }
+
+  Future<List<Quote>> getHighlights(String bookId) {
+    return (_db.select(
+      _db.quotes,
+    )..where((t) => t.bookId.equals(bookId))).get();
+  }
+
+  Future<void> assignQuoteToCharacter(String quoteId, String? characterId) {
+    return (_db.update(_db.quotes)..where((t) => t.id.equals(quoteId))).write(
+      QuotesCompanion(characterId: Value(characterId)),
+    );
+  }
+
+  Future<void> deleteHighlight(String id) {
+    return (_db.delete(_db.quotes)..where((t) => t.id.equals(id))).go();
   }
 }
