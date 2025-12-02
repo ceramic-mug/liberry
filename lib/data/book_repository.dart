@@ -1,0 +1,209 @@
+import 'dart:io';
+import 'package:drift/drift.dart';
+import 'package:epubx/epubx.dart';
+import 'package:uuid/uuid.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'package:image/image.dart' as img;
+import 'database.dart';
+
+class BookRepository {
+  final AppDatabase _db;
+
+  BookRepository(this._db);
+
+  Future<void> addBook(String filePath, {String? remoteCoverUrl}) async {
+    final file = File(filePath);
+    if (!await file.exists()) {
+      throw Exception('File not found: $filePath');
+    }
+
+    final bytes = await file.readAsBytes();
+    EpubBook? epubBook;
+    try {
+      epubBook = await EpubReader.readBook(bytes);
+    } catch (e) {
+      // Fallback to basic info if parsing fails
+      print('EPUB parsing failed: $e');
+    }
+
+    final title = epubBook?.Title ?? p.basename(filePath);
+    final author = epubBook?.Author;
+
+    String? coverPath;
+
+    // 1. Try to download remote cover if provided
+    if (remoteCoverUrl != null) {
+      print('Attempting to download remote cover: $remoteCoverUrl');
+      try {
+        final appDir = await getApplicationDocumentsDirectory();
+        final coversDir = Directory(p.join(appDir.path, 'covers'));
+        if (!await coversDir.exists()) {
+          await coversDir.create(recursive: true);
+        }
+
+        final coverFileName = '${const Uuid().v4()}.png';
+        final coverFile = File(p.join(coversDir.path, coverFileName));
+
+        // Download the image
+        final request = await HttpClient().getUrl(Uri.parse(remoteCoverUrl));
+        final response = await request.close();
+        await response.pipe(coverFile.openWrite());
+
+        coverPath = p.join('covers', coverFileName);
+        print('Downloaded and saved remote cover to: $coverPath');
+      } catch (e) {
+        print('Failed to download remote cover: $e');
+      }
+    }
+
+    // 2. If no remote cover (or download failed), try extraction from EPUB
+    if (coverPath == null) {
+      // Try to get cover image
+      img.Image? coverImage = epubBook?.CoverImage;
+
+      // Fallback: Look for image with 'cover' in filename
+      if (coverImage == null && epubBook?.Content?.Images != null) {
+        print('CoverImage is null, trying fallback...');
+        try {
+          final images = epubBook!.Content!.Images!;
+          print('Available images: ${images.keys.toList()}'); // Debugging line
+
+          var coverKey = images.keys.firstWhere(
+            (key) => key.toLowerCase().contains('cover'),
+            orElse: () => '',
+          );
+
+          // If no 'cover' found, try to find the largest image (likely the high-res cover)
+          if (coverKey.isEmpty && images.isNotEmpty) {
+            print('No "cover" filename found. Searching for largest image...');
+            int maxSize = 0;
+            for (final entry in images.entries) {
+              final size = entry.value.Content?.length ?? 0;
+              if (size > maxSize) {
+                maxSize = size;
+                coverKey = entry.key;
+              }
+            }
+            print(
+              'Selected largest image as cover: $coverKey ($maxSize bytes)',
+            );
+          }
+
+          if (coverKey.isNotEmpty) {
+            print('Found fallback cover image: $coverKey');
+            final coverContent = images[coverKey];
+            if (coverContent != null) {
+              coverImage = img.decodeImage(
+                Uint8List.fromList(coverContent.Content!),
+              );
+            }
+          }
+        } catch (e) {
+          print('Fallback cover extraction failed: $e');
+        }
+      }
+
+      if (coverImage != null) {
+        print('Found cover image (original or fallback)');
+        try {
+          final appDir = await getApplicationDocumentsDirectory();
+          final coversDir = Directory(p.join(appDir.path, 'covers'));
+          if (!await coversDir.exists()) {
+            await coversDir.create(recursive: true);
+          }
+
+          final coverFileName = '${const Uuid().v4()}.png';
+          final coverFile = File(p.join(coversDir.path, coverFileName));
+
+          // Encode image to PNG
+          final coverBytes = img.encodePng(coverImage);
+          await coverFile.writeAsBytes(coverBytes);
+          // Store relative path
+          coverPath = p.join('covers', coverFileName);
+          print('Saved cover to: $coverPath');
+        } catch (e) {
+          // Ignore cover error for now
+          print('Error saving cover: $e');
+        }
+      } else {
+        print('No cover image found in EPUB (even after fallback)');
+      }
+    }
+
+    final id = const Uuid().v4();
+    await _db
+        .into(_db.books)
+        .insert(
+          BooksCompanion.insert(
+            id: id,
+            title: title,
+            filePath: filePath,
+            author: Value(author),
+            coverPath: Value(coverPath),
+          ),
+        );
+  }
+
+  Stream<List<Book>> watchAllBooks() {
+    return _db.select(_db.books).watch();
+  }
+
+  Future<void> saveReadingProgress(String bookId, String cfi) async {
+    // Check if progress exists
+    final progress = await (_db.select(
+      _db.readingProgress,
+    )..where((tbl) => tbl.bookId.equals(bookId))).getSingleOrNull();
+
+    if (progress != null) {
+      await (_db.update(
+        _db.readingProgress,
+      )..where((tbl) => tbl.bookId.equals(bookId))).write(
+        ReadingProgressCompanion(
+          cfi: Value(cfi),
+          lastReadAt: Value(DateTime.now()),
+        ),
+      );
+    } else {
+      await _db
+          .into(_db.readingProgress)
+          .insert(
+            ReadingProgressCompanion.insert(
+              id: const Uuid().v4(),
+              bookId: bookId,
+              cfi: cfi,
+              lastReadAt: Value(DateTime.now()),
+            ),
+          );
+    }
+  }
+
+  Future<String?> getReadingProgress(String bookId) async {
+    final progress = await (_db.select(
+      _db.readingProgress,
+    )..where((tbl) => tbl.bookId.equals(bookId))).getSingleOrNull();
+    return progress?.cfi;
+  }
+
+  Future<void> deleteBook(String id) async {
+    await (_db.delete(_db.books)..where((t) => t.id.equals(id))).go();
+    await (_db.delete(
+      _db.readingProgress,
+    )..where((t) => t.bookId.equals(id))).go();
+    await (_db.delete(_db.quotes)..where((t) => t.bookId.equals(id))).go();
+  }
+
+  Future<void> addHighlight(String bookId, String text, String cfi) async {
+    await _db
+        .into(_db.quotes)
+        .insert(
+          QuotesCompanion.insert(
+            id: const Uuid().v4(),
+            textContent: text,
+            bookId: bookId,
+            cfi: Value(cfi),
+            // characterId is now nullable, so we don't pass it
+          ),
+        );
+  }
+}

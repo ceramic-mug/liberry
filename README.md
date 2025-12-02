@@ -1,0 +1,117 @@
+# Liberry - Native Ebook Reader
+
+A modern, native ebook reader application built with Flutter, designed for iOS (and Android). It features a unified search for free ebooks, a local library management system, and a customizable reading experience with precise progress tracking.
+
+## 🚀 Key Features
+
+*   **Unified Discovery**: Seamlessly search and download books from **Standard Ebooks** (OPDS) and **Project Gutenberg** (Gutendex API) in a single interface.
+*   **Local Library**: Manages downloaded EPUBs with robust cover extraction and metadata storage.
+*   **Advanced Reader**:
+    *   **Customization**: Adjustable font size, font family (Serif/Sans), and themes (Light, Dark, Sepia).
+    *   **Progress Tracking**: Saves reading progress using **CFI-like DOM paths**, ensuring you return to the exact paragraph where you left off.
+    *   **Highlights**: Select and save text highlights.
+    *   **Navigation**: Table of Contents and continuous chapter scrolling.
+*   **Offline First**: All downloaded books and metadata are stored locally using SQLite.
+
+## 🛠 Tech Stack
+
+*   **Framework**: [Flutter](https://flutter.dev/)
+*   **State Management**: [Riverpod](https://riverpod.dev/)
+*   **Database**: [Drift](https://drift.simonbinder.eu/) (SQLite abstraction)
+*   **EPUB Parsing**: `epubx`
+*   **WebView**: `flutter_inappwebview` (for rendering book content)
+*   **Networking**: `dio`, `http`
+*   **Architecture**: Feature-based / Layered (Data, UI, Services)
+
+## 📂 Project Structure
+
+```
+lib/
+├── data/                  # Data layer
+│   ├── database.dart      # Drift database schema and access
+│   ├── book_repository.dart # Repository for Book operations
+│   ├── download_manager.dart # Handles book downloads
+│   └── remote/            # API services (OpdsService, GutendexService)
+├── ui/                    # UI layer
+│   ├── main.dart          # Entry point and LibraryScreen
+│   ├── discover_screen.dart # Unified search and download UI
+│   ├── book_details_screen.dart # Book metadata and actions
+│   └── reader_screen.dart # The actual ebook reader (WebView-based)
+├── services/              # Core services
+│   └── epub_service.dart  # EPUB parsing logic
+└── providers.dart         # Riverpod provider definitions
+```
+
+## ⚡️ Getting Started
+
+### Prerequisites
+*   Flutter SDK (Latest Stable)
+*   Xcode (for iOS) or Android Studio (for Android)
+*   CocoaPods (for iOS dependencies)
+
+### Setup
+
+1.  **Clone the repository:**
+    ```bash
+    git clone <repo_url>
+    cd liberry
+    ```
+
+2.  **Install dependencies:**
+    ```bash
+    flutter pub get
+    ```
+
+3.  **Generate Code (Critical):**
+    This project uses `drift` and `riverpod` code generation. You **must** run this command after cloning or modifying database schemas:
+    ```bash
+    flutter pub run build_runner build --delete-conflicting-outputs
+    ```
+
+4.  **Run the app:**
+    ```bash
+    flutter run
+    ```
+
+## 📱 Deployment (iOS)
+
+To deploy to a physical iPhone:
+
+1.  **Open Workspace:**
+    ```bash
+    open ios/Runner.xcworkspace
+    ```
+2.  **Signing:**
+    *   Select the "Runner" project in Xcode.
+    *   Go to **Signing & Capabilities**.
+    *   Select your **Team** (Personal Team is fine for local dev).
+    *   Ensure the **Bundle Identifier** is unique if needed.
+3.  **Developer Mode:**
+    *   On your iPhone, go to **Settings > Privacy & Security > Developer Mode** and enable it.
+4.  **Run Release Build:**
+    To install a standalone version that runs without the debugger attached:
+    ```bash
+    flutter run --release
+    ```
+
+## 🧩 Key Implementation Details
+
+### Reading Progress (CFI)
+We use a custom implementation of EPUB CFI (Canonical Fragment Identifier) to save precise locations.
+*   **Logic**: `ReaderScreen` injects JavaScript to calculate a DOM path (e.g., `/0/1/4/2`) to the first visible element.
+*   **Storage**: Stored in the `Books` table as a JSON string: `{"chapterIndex": 2, "cfi": "/0/1/4/2"}`.
+*   **Restoration**: On load, the JS restores the scroll position to that specific element.
+
+### Cover Handling
+*   **Standard Ebooks**: Covers are downloaded from the remote URL provided in the OPDS feed and saved locally.
+*   **Gutenberg/Others**: Covers are extracted from the EPUB file itself.
+*   **Fallback**: If no cover is found, a default icon is shown.
+
+## 🚧 Known Issues & Future Work
+
+*   **Horizontal Pagination**: The horizontal scrolling mode uses JavaScript snapping. It works but could be smoother. Native pagination was disabled to allow for continuous chapter appending.
+*   **Highlight Viewer**: Highlights are saved to the database but currently only visible via a basic list or logs. A dedicated UI to view/export highlights is needed.
+*   **Cloud Sync**: The app is currently local-only. Syncing progress across devices would be a great next step.
+
+---
+*Generated by Antigravity Agent*
