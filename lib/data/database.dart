@@ -61,7 +61,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 3; // Increment schema version
+  int get schemaVersion => 4; // Increment schema version
 
   @override
   MigrationStrategy get migration {
@@ -75,18 +75,31 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(quotes);
         }
         if (from < 3) {
-          // We need to alter the table to make characterId nullable.
-          // SQLite doesn't support altering column nullability easily.
-          // For dev, we can just recreate the table or ignore strictness if data is empty.
-          // But correct way is:
-          // Since we can't easily alter column, we will just let it be for now
-          // and assume new installs will get the new schema.
-          // For existing installs, this might fail if we try to insert null.
-          // Given this is a prototype, I'll just recreate the table if possible,
-          // or just add the column if it was missing (it wasn't).
+          // Previous attempt to fix schema, might have been skipped or failed.
+        }
+        if (from < 4) {
+          // Fix for NOT NULL constraint on character_id in quotes table.
+          // SQLite doesn't support altering column nullability.
+          // We must recreate the table.
 
-          // Actually, Drift might handle this if we just update the definition.
-          // But for safety in this session, I'll just allow it.
+          // 1. Rename existing table
+          await m.issueCustomQuery('ALTER TABLE quotes RENAME TO quotes_old');
+
+          // 2. Create new table with correct schema (nullable character_id)
+          await m.createTable(quotes);
+
+          // 3. Copy data from old table to new table
+          // Note: We need to handle the case where character_id might be missing in old data if we just select all.
+          // But since old schema had it as NOT NULL (presumably), it should be there.
+          // However, if we are inserting new data with NULL, we want the new table to allow it.
+          // The copy should work fine.
+          await m.issueCustomQuery(
+            'INSERT INTO quotes (id, text_content, book_id, character_id, cfi, created_at) '
+            'SELECT id, text_content, book_id, character_id, cfi, created_at FROM quotes_old',
+          );
+
+          // 4. Drop old table
+          await m.issueCustomQuery('DROP TABLE quotes_old');
         }
       },
     );
