@@ -431,16 +431,11 @@ class ReaderHtmlGenerator {
         function setupVerticalObservers() {
             // 1. Active Chapter Observer (Anchors)
             // We use a scroll listener for more reliable "top of screen" detection
-            // as requested by the user. IntersectionObserver can be tricky with
-            // rapid scrolling or when anchors are far apart.
             
             function checkActiveChapter() {
-                // Find the anchor closest to the top (but not too far down)
-                // We want the last anchor that has passed the "trigger line" (e.g. 20% down screen)
                 var triggerLine = window.innerHeight * 0.2;
                 var activeAnchor = null;
                 
-                // Assuming chapterAnchors are sorted by position in the file (which they should be)
                 for (var i = 0; i < chapterAnchors.length; i++) {
                     var a = chapterAnchors[i];
                     if (!a.id) continue;
@@ -449,23 +444,43 @@ class ReaderHtmlGenerator {
                     
                     var rect = el.getBoundingClientRect();
                     
-                    // If the element is above the trigger line, it's a candidate.
-                    // We want the *last* one that is above the line.
                     if (rect.top < triggerLine) {
                         activeAnchor = a;
                     } else {
-                        // Once we find an anchor below the line, we stop, 
-                        // because subsequent anchors will also be below.
                         break;
                     }
                 }
                 
                 if (activeAnchor) {
                     if (window.flutter_inappwebview) {
-                        // Debounce sending to Flutter to avoid spam
                         if (window._lastSentChapterIndex !== activeAnchor.chapterIndex) {
                              window._lastSentChapterIndex = activeAnchor.chapterIndex;
                              window.flutter_inappwebview.callHandler('onActiveChapterChanged', activeAnchor.chapterIndex);
+                        }
+                    }
+                }
+            }
+
+            function reportReadingLocation() {
+                // Find the element at the top of the viewport (with some offset)
+                var x = window.innerWidth / 2;
+                var y = window.innerHeight * 0.2; // 20% down
+                
+                var el = document.elementFromPoint(x, y);
+                if (!el) return;
+
+                // If we hit a text node's parent (most likely), that's good.
+                // If we hit the body, try to find a child.
+                if (el === document.body) {
+                     // Try a bit lower if we hit body (maybe margin/padding)
+                     el = document.elementFromPoint(x, y + 50);
+                }
+                
+                if (el && el !== document.body) {
+                    var path = getPathTo(el);
+                    if (path) {
+                        if (window.flutter_inappwebview) {
+                            window.flutter_inappwebview.callHandler('onScrollProgress', path);
                         }
                     }
                 }
@@ -475,14 +490,18 @@ class ReaderHtmlGenerator {
             var lastScrollTime = 0;
             window.addEventListener('scroll', function() {
                 var now = new Date().getTime();
-                if (now - lastScrollTime > 100) { // Check every 100ms
+                if (now - lastScrollTime > 500) { // Check every 500ms (less frequent than before to save resources)
                     lastScrollTime = now;
                     checkActiveChapter();
+                    reportReadingLocation();
                 }
             });
             
             // Initial check
-            setTimeout(checkActiveChapter, 500);
+            setTimeout(function() {
+                checkActiveChapter();
+                reportReadingLocation();
+            }, 500);
         }
         
         function showMenu(rect) {
