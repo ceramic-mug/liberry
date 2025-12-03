@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:epubx/epubx.dart';
@@ -6,9 +8,15 @@ import 'dart:convert';
 import 'dart:io';
 import '../data/database.dart';
 import '../services/epub_service.dart';
-import '../data/book_repository.dart';
-import '../data/character_repository.dart';
+import '../data/reader_settings_repository.dart';
+
 import '../providers.dart';
+import 'reader/reader_models.dart';
+import 'reader/reader_html_generator.dart';
+import 'reader/reader_settings_modal.dart';
+import 'reader/reader_navigation_bar.dart';
+import 'reader/reader_drawer.dart';
+import 'reader/reader_top_bar.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final Book book;
@@ -25,8 +33,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   final EpubService _epubService = EpubService();
   InAppWebViewController? _webViewController;
   bool _isLoading = true;
-  List<EpubChapter> _chapters = [];
-  int _currentChapterIndex = 0;
+  List<EpubChapterRef> _chapters = [];
+  List<List<EpubChapterRef>> _spineGroups = []; // Grouped by file
+  int _currentChapterIndex = 0; // Current logical chapter (TOC)
+  int _activeChapterIndex = 0; // The chapter currently visible in UI
   List<Quote> _currentHighlights = []; // Store full Quote objects
 
   // Settings
@@ -36,615 +46,276 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   ReaderScrollMode _scrollMode = ReaderScrollMode.vertical;
   bool _showControls = false; // Start immersive
 
-  // Tap detection
-  // Offset? _pointerDownPosition;
-  // DateTime? _pointerDownTime;
-
   String _initialCfiPath = '';
+  int? _initialChapterIndex;
+  bool _isSettingsOpen = false;
 
   @override
   void initState() {
     super.initState();
+
+    // Load settings
+    final settingsRepo = ref.read(readerSettingsRepositoryProvider);
+    _theme = settingsRepo.getTheme();
+    _scrollMode = settingsRepo.getScrollMode();
+    _fontSize = settingsRepo.getFontSize();
+    _fontFamily = settingsRepo.getFontFamily();
+
     // Restore progress if available
     if (widget.initialCfi.isNotEmpty) {
       try {
         // Try parsing as JSON first
         if (widget.initialCfi.startsWith('{')) {
-          final chapterMatch = RegExp(
-            r'"chapterIndex":\s*(\d+)',
-          ).firstMatch(widget.initialCfi);
-          final cfiMatch = RegExp(
-            r'"cfi":\s*"([^"]+)"',
-          ).firstMatch(widget.initialCfi);
-
-          if (chapterMatch != null) {
-            _currentChapterIndex = int.parse(chapterMatch.group(1)!);
-          }
-          if (cfiMatch != null) {
-            _initialCfiPath = cfiMatch.group(1)!;
-          } else {
-            // Try 'startPath' key (Highlight format)
-            final startPathMatch = RegExp(
-              r'"startPath":\s*"([^"]+)"',
-            ).firstMatch(widget.initialCfi);
-            if (startPathMatch != null) {
-              _initialCfiPath = startPathMatch.group(1)!;
+          try {
+            final json = jsonDecode(widget.initialCfi);
+            if (json['chapterIndex'] != null) {
+              _initialChapterIndex = json['chapterIndex'] is int
+                  ? json['chapterIndex']
+                  : int.tryParse(json['chapterIndex'].toString());
             }
+
+            if (json['cfi'] != null) {
+              _initialCfiPath = json['cfi'];
+            } else if (json['startPath'] != null) {
+              _initialCfiPath = json['startPath'];
+            }
+          } catch (e) {
+            print('Error parsing initial CFI JSON: $e');
           }
         } else {
-          // Fallback to legacy int parsing
-          _currentChapterIndex = int.parse(widget.initialCfi);
+          // Legacy int parsing
+          _initialChapterIndex = int.tryParse(widget.initialCfi);
         }
       } catch (e) {
         print('Error parsing initial CFI: $e');
       }
     }
+
     _loadBook();
   }
 
   Future<void> _loadBook() async {
-    await _epubService.loadBook(widget.book.filePath);
+    print('ReaderScreen: _loadBook started');
+    try {
+      await _epubService.loadBook(widget.book.filePath);
+      print('ReaderScreen: Book loaded in service');
+      final allChapters = await _epubService.getAllChapters();
+      print('ReaderScreen: Got ${allChapters.length} chapters');
 
-    // Pre-fetch highlights
-    final highlights = await ref
-        .read(bookRepositoryProvider)
-        .getHighlights(widget.book.id);
+      setState(() {
+        _chapters = allChapters;
+        _spineGroups = _groupChaptersBySpine(_chapters);
+      });
+      print('ReaderScreen: Created ${_spineGroups.length} spine groups');
 
-    setState(() {
-      _chapters = _epubService.getAllChapters();
-      _currentHighlights = highlights;
-      _isLoading = false;
-    });
-    // Load the restored chapter
-    if (_currentChapterIndex >= 0 && _currentChapterIndex < _chapters.length) {
-      _loadChapter(_currentChapterIndex, initialCfi: _initialCfiPath);
-    }
-  }
+      // Load settings
+      final settingsRepo = ref.read(readerSettingsRepositoryProvider);
+      _theme = settingsRepo.getTheme();
+      _scrollMode = settingsRepo.getScrollMode();
+      _fontSize = settingsRepo.getFontSize();
+      _fontFamily = settingsRepo.getFontFamily();
 
-  String _generateHtml(
-    String content, {
-    String initialProgress = '',
-    List<Quote> highlights = const [],
-  }) {
-    // ... (theme logic omitted for brevity, it's unchanged) ...
-    String bgColor;
-    String textColor;
+      // Restore progress ONLY if we didn't pass an initial CFI (e.g. from a highlight)
+      if (widget.initialCfi.isEmpty) {
+        final progress = await ref
+            .read(bookRepositoryProvider)
+            .getReadingProgress(widget.book.id);
+        print('ReaderScreen: Progress restored: $progress');
 
-    switch (_theme) {
-      case ReaderTheme.light:
-        bgColor = '#ffffff';
-        textColor = '#000000';
-        break;
-      case ReaderTheme.dark:
-        bgColor = '#121212';
-        textColor = '#e0e0e0';
-        break;
-      case ReaderTheme.sepia:
-        bgColor = '#f4ecd8';
-        textColor = '#5b4636';
-        break;
-    }
-
-    // Horizontal Mode CSS (Strict Pagination)
-    String scrollCss = '';
-    if (_scrollMode == ReaderScrollMode.horizontal) {
-      scrollCss = '''
-        html, body {
-          height: 100vh;
-          width: 100vw;
-          margin: 0 !important;
-          padding: 0 !important;
-          overflow-y: hidden;
-          overflow-x: scroll;
+        if (progress != null) {
+          try {
+            final json = jsonDecode(progress);
+            _initialChapterIndex = json['chapterIndex'];
+            _initialCfiPath = json['cfi'];
+          } catch (e) {
+            print('Error parsing progress: $e');
+          }
         }
-        body {
-          column-width: 100vw;
-          column-gap: 0;
-          column-fill: auto;
-          height: 100vh;
-          /* No padding on body to ensure perfect 100vw columns */
-        }
-        /* Add padding to content elements for reading comfort */
-        p, h1, h2, h3, h4, h5, h6, li, div {
-          padding-left: 20px;
-          padding-right: 20px;
-          box-sizing: border-box;
-        }
-        img {
-          max-height: 90vh;
-          max-width: 100%;
-          width: auto;
-          height: auto;
-          margin: 0 auto;
-          display: block;
-        }
-      ''';
-    } else {
-      // Vertical Mode CSS
-      scrollCss = '''
-        body {
-          padding: 20px 30px;
-          margin: 0;
-          max-width: 800px;
-          margin-left: auto;
-          margin-right: auto;
-        }
-      ''';
-    }
-
-    // Prepare highlights JSON with ID
-    // We filter by chapter here to be safe
-    final filteredHighlights = highlights.where((h) {
-      if (h.cfi == null) return false;
-      try {
-        final json = jsonDecode(h.cfi!);
-        return json['chapterIndex'] == _currentChapterIndex;
-      } catch (e) {
-        return false;
+      } else {
+        print('ReaderScreen: Skipping progress restore, using initialCfi');
       }
-    }).toList();
 
-    final highlightsJson = jsonEncode(
-      filteredHighlights.map((h) {
-        return {
-          'id': h.id,
-          'cfi': h.cfi, // This is the JSON string
-        };
-      }).toList(),
-    );
+      // Determine initial spine index
+      // Determine initial chapter index
+      if (_initialChapterIndex != null &&
+          _initialChapterIndex! < _chapters.length) {
+        _currentChapterIndex = _initialChapterIndex!;
+        _activeChapterIndex = _initialChapterIndex!;
+      }
+      print('ReaderScreen: Initial chapter index: $_currentChapterIndex');
 
-    final css =
-        '''
-      <style>
-        body {
-          background-color: $bgColor !important;
-          color: $textColor !important;
-          font-size: ${_fontSize}% !important;
-          font-family: $_fontFamily !important;
-          line-height: 1.8 !important;
-          position: relative; /* For absolute positioning of tooltip */
-        }
-        p {
-          margin-bottom: 1.5em;
-          text-align: justify;
-        }
-        img {
-          max-width: 100%;
-          height: auto;
-          display: block;
-          margin: 20px auto;
-        }
-        $scrollCss
-        .highlight {
-          background-color: #ffeb3b;
-          mix-blend-mode: multiply;
-        }
-        #highlight-tooltip {
-          position: absolute;
-          background-color: #333;
-          color: white;
-          padding: 8px 16px;
-          border-radius: 4px;
-          font-size: 14px;
-          cursor: pointer;
-          z-index: 10000;
-          display: none;
-          box-shadow: 0 2px 5px rgba(0,0,0,0.2);
-          user-select: none;
-          -webkit-user-select: none;
-        }
-        #highlight-tooltip::after {
-          content: '';
-          position: absolute;
-          top: 100%;
-          left: 50%;
-          margin-left: -5px;
-          border-width: 5px;
-          border-style: solid;
-          border-color: #333 transparent transparent transparent;
-        }
-      </style>
-      <script>
-        // Generate a simple path to the element: /0/1/2 (indices of element children)
-        function getPathTo(element) {
-            if (element === document.body) return "";
-            if (!element.parentNode) return "";
-            
-            var ix = 0;
-            var siblings = element.parentNode.childNodes;
-            for (var i = 0; i < siblings.length; i++) {
-                var sibling = siblings[i];
-                if (sibling === element) {
-                    return getPathTo(element.parentNode) + '/' + ix;
-                }
-                ix++; // Count all nodes (text, comments, elements)
-            }
-            return "";
-        }
+      setState(() {
+        _isLoading = false;
+      });
 
-        function restorePath(path) {
-            if (!path || path === "") return;
-            try {
-                var parts = path.split('/').filter(p => p.length > 0);
-                var el = document.body;
-                for (var i = 0; i < parts.length; i++) {
-                    var ix = parseInt(parts[i]);
-                    var children = Array.from(el.childNodes).filter(n => n.nodeType === 1);
-                    if (ix < children.length) {
-                        el = children[ix];
-                    } else {
-                        break;
-                    }
-                }
-                if (el) {
-                    el.scrollIntoView();
-                }
-            } catch (e) {
-                console.log("Error restoring path: " + e);
-            }
+      // Load the initial chapter
+      if (mounted) {
+        if (_webViewController != null) {
+          print(
+            'ReaderScreen: WebView ready, triggering _loadChapter($_currentChapterIndex)',
+          );
+          _loadChapter(_currentChapterIndex, initialCfi: _initialCfiPath);
+        } else {
+          print(
+            'ReaderScreen: WebView not ready, waiting for onWebViewCreated',
+          );
         }
-
-        // Restore scroll position
-        window.onload = function() {
-           // Inject tooltip element
-           var tooltip = document.createElement('div');
-           tooltip.id = 'highlight-tooltip';
-           tooltip.innerText = 'Highlight';
-           document.body.appendChild(tooltip);
-
-           tooltip.addEventListener('mousedown', function(e) {
-               console.log("Tooltip mousedown");
-               e.preventDefault(); // Prevent losing selection
-               e.stopPropagation();
-               
-               var cfi = getCFI();
-               console.log("CFI generated: " + cfi);
-               if (cfi) {
-                   applyHighlight(cfi);
-                   if (window.flutter_inappwebview) {
-                       console.log("Calling flutter_inappwebview.callHandler");
-                       window.flutter_inappwebview.callHandler('onHighlight', cfi);
-                   } else {
-                       console.log("flutter_inappwebview not found");
-                   }
-                   window.getSelection().removeAllRanges();
-                   hideTooltip();
-               }
-           });
-           
-           // Handle selection changes
-           document.addEventListener('selectionchange', function() {
-               var selection = window.getSelection();
-               if (selection.rangeCount > 0 && !selection.isCollapsed) {
-                   var range = selection.getRangeAt(0);
-                   var rect = range.getBoundingClientRect();
-                   showTooltip(rect);
-               } else {
-                   hideTooltip();
-               }
-           });
-           
-           // Hide on scroll
-           window.addEventListener('scroll', function() {
-               hideTooltip();
-           });
-
-           if ('$initialProgress' !== '0.0' && '$initialProgress' !== '') {
-              // If it looks like a path (starts with /), restore it
-              if ('$initialProgress'.startsWith('/')) {
-                  // Small delay to ensure layout is done
-                  setTimeout(function() {
-                      restorePath('$initialProgress');
-                  }, 100);
-              } else {
-                  // Legacy percentage fallback
-                  var pct = parseFloat('$initialProgress');
-                  if (pct > 0) {
-                      if (${_scrollMode == ReaderScrollMode.horizontal}) {
-                         var targetScroll = document.body.scrollWidth * pct;
-                         window.scrollTo(targetScroll, 0);
-                      } else {
-                         var targetScroll = (document.body.scrollHeight - window.innerHeight) * pct;
-                         window.scrollTo(0, targetScroll);
-                      }
-                  }
-              }
-           }
-           
-           // Restore highlights
-           var highlights = $highlightsJson;
-           if (highlights && highlights.length > 0) {
-               highlights.forEach(function(h) {
-                   applyHighlight(h.cfi, h.id);
-               });
-           }
-        };
-
-        function restorePath(path) {
-            // ... (unchanged) ...
-            if (!path || path === "") return;
-            try {
-                var parts = path.split('/').filter(p => p.length > 0);
-                var el = document.body;
-                for (var i = 0; i < parts.length; i++) {
-                    var ix = parseInt(parts[i]);
-                    var children = Array.from(el.childNodes).filter(n => n.nodeType === 1);
-                    if (ix < children.length) {
-                        el = children[ix];
-                    } else {
-                        break;
-                    }
-                }
-                if (el) {
-                    if (${_scrollMode == ReaderScrollMode.horizontal}) {
-                        // Horizontal Mode: Calculate page index
-                        var rect = el.getBoundingClientRect();
-                        // We need absolute left position relative to document
-                        var absoluteLeft = rect.left + window.scrollX;
-                        var pageWidth = window.innerWidth;
-                        var pageIndex = Math.floor(absoluteLeft / pageWidth);
-                        
-                        window.scrollTo({
-                            left: pageIndex * pageWidth,
-                            behavior: 'auto' // Instant jump
-                        });
-                    } else {
-                        // Vertical Mode: Center element
-                        el.scrollIntoView({block: 'center'});
-                    }
-                    
-                    // Highlight temporarily to show user where we jumped
-                    var originalBg = el.style.backgroundColor;
-                    el.style.backgroundColor = 'rgba(255, 235, 59, 0.3)';
-                    setTimeout(function() {
-                        el.style.backgroundColor = originalBg;
-                    }, 2000);
-                }
-            } catch (e) {
-                console.log("Error restoring path: " + e);
-            }
-        }
-
-        function showTooltip(rect) {
-            var tooltip = document.getElementById('highlight-tooltip');
-            if (!tooltip) return;
-            
-            var scrollX = window.scrollX || window.pageXOffset;
-            var scrollY = window.scrollY || window.pageYOffset;
-            
-            tooltip.style.display = 'block';
-            tooltip.style.left = (rect.left + rect.width / 2 - tooltip.offsetWidth / 2 + scrollX) + 'px';
-            tooltip.style.top = (rect.top - tooltip.offsetHeight - 10 + scrollY) + 'px';
-        }
-
-        function hideTooltip() {
-            var tooltip = document.getElementById('highlight-tooltip');
-            if (tooltip) {
-                tooltip.style.display = 'none';
-            }
-        }
-
-        // ... (scroll reporting unchanged) ...
-
-        // ... (highlight helpers unchanged) ...
-        
-        function getCFI() {
-             var selection = window.getSelection();
-             if (selection.rangeCount > 0) {
-                 var range = selection.getRangeAt(0);
-                 var startPath = getPathTo(range.startContainer);
-                 var endPath = getPathTo(range.endContainer);
-                 return JSON.stringify({
-                     startPath: startPath,
-                     startOffset: range.startOffset,
-                     endPath: endPath,
-                     endOffset: range.endOffset,
-                     text: selection.toString()
-                 });
-             }
-             return null;
-        }
-        
-        function applyHighlight(cfiStr, id) {
-            try {
-                var cfi = JSON.parse(cfiStr);
-                var startNode = getNodeByPath(cfi.startPath);
-                var endNode = getNodeByPath(cfi.endPath);
-                
-                if (startNode && endNode) {
-                    var range = document.createRange();
-                    range.setStart(startNode, cfi.startOffset);
-                    range.setEnd(endNode, cfi.endOffset);
-                    
-                    var span = document.createElement('span');
-                    span.className = 'highlight';
-                    if (id) {
-                        span.id = 'highlight-' + id;
-                        span.onclick = function(e) {
-                            e.stopPropagation();
-                            console.log("Highlight clicked: " + id);
-                            window.flutter_inappwebview.callHandler('onHighlightClick', id);
-                        };
-                    }
-                    range.surroundContents(span);
-                }
-            } catch(e) {
-                console.log("Error applying highlight: " + e);
-            }
-        }
-
-        function removeHighlight(id) {
-            var span = document.getElementById('highlight-' + id);
-            if (span) {
-                var parent = span.parentNode;
-                while (span.firstChild) {
-                    parent.insertBefore(span.firstChild, span);
-                }
-                parent.removeChild(span);
-            }
-        }
-        
-        function getNodeByPath(path) {
-            if (!path || path === "") return document.body;
-            var parts = path.split('/').filter(p => p.length > 0);
-            var el = document.body;
-            for (var i = 0; i < parts.length; i++) {
-                var ix = parseInt(parts[i]);
-                if (ix < el.childNodes.length) {
-                    el = el.childNodes[ix];
-                } else {
-                    return null;
-                }
-            }
-            return el;
-        }
-
-        // Detect taps for Controls AND Page Turning
-          // Detect taps for Controls AND Page Turning
-          window.addEventListener('click', function(e) {
-            // Prevent triggering if clicking a link or the tooltip
-            if (e.target.tagName === 'A' || e.target.id === 'highlight-tooltip') return;
-            
-            // Don't toggle if text is selected
-            if (window.getSelection().toString().length > 0) return;
-
-            var width = window.innerWidth;
-            var x = e.clientX;
-            
-            // Horizontal Mode: Tap Zones
-            if (${_scrollMode == ReaderScrollMode.horizontal}) {
-               if (x > width * 0.8) {
-                  // Right 20%: Next Page
-                  window.scrollBy({ left: width, behavior: 'smooth' });
-                  return;
-               } else if (x < width * 0.2) {
-                  // Left 20%: Prev Page
-                  window.scrollBy({ left: -width, behavior: 'smooth' });
-                  return;
-               }
-             }
-            
-            // Center / Vertical Mode: Toggle Controls
-            console.log("TOGGLE_CONTROLS");
-            if (window.flutter_inappwebview) {
-               window.flutter_inappwebview.callHandler('onTap');
-            }
-          }, true);
-      </script>
-    ''';
-
-    if (content.contains('<head>')) {
-      return content.replaceFirst('<head>', '<head>$css');
-    } else if (content.contains('<html>')) {
-      return content.replaceFirst('<html>', '<html><head>$css</head>');
-    } else {
-      return '''
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-          $css
-        </head>
-        <body>
-          $content
-        </body>
-        </html>
-      ''';
+      }
+    } catch (e, stack) {
+      print('Error loading book: $e');
+      print(stack);
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading book: $e')));
+      }
     }
   }
 
   Future<void> _loadChapter(int index, {String initialCfi = ''}) async {
     if (index < 0 || index >= _chapters.length) return;
+
+    if (_webViewController == null) {
+      return;
+    }
+
+    print(
+      "ReaderScreen: _loadChapter($index) called with initialCfi: '$initialCfi'",
+    );
+
+    // Find which spine group this chapter belongs to
+    int spineIndex = -1;
+    for (int i = 0; i < _spineGroups.length; i++) {
+      if (_spineGroups[i].contains(_chapters[index])) {
+        spineIndex = i;
+        break;
+      }
+    }
+
+    if (spineIndex == -1) {
+      print("Error: Could not find spine group for chapter $index");
+      return;
+    }
+
     setState(() {
       _currentChapterIndex = index;
+      _activeChapterIndex = index;
     });
 
     // Save progress (initial load)
-    _saveProgress(index, initialCfi);
+    _saveProgress(_activeChapterIndex, initialCfi);
 
-    final content = _epubService.getChapterContent(_chapters[index]);
+    // Load content of the spine item
+    // We use the first chapter in the group to get the file content, as they share the file
+    final content = await _epubService.getChapterContent(
+      _spineGroups[spineIndex].first,
+    );
+
     if (content != null) {
-      // Refresh highlights just in case (e.g. if added from another screen, though unlikely here)
-      // But more importantly, we need to filter them.
-      // We can re-fetch or use cached. Let's re-fetch to be safe and consistent.
-      final allHighlights = await ref
+      // Determine anchors for slicing
+      final currentChapter = _chapters[index];
+      String? startAnchor = currentChapter.Anchor;
+      String? endAnchor;
+
+      // Check if there is a next chapter in the SAME spine group
+      final group = _spineGroups[spineIndex];
+      final indexInGroup = group.indexOf(currentChapter);
+      if (indexInGroup != -1 && indexInGroup < group.length - 1) {
+        endAnchor = group[indexInGroup + 1].Anchor;
+      }
+
+      // Prepare anchors for this spine item (for JS scroll/active detection if needed, though less relevant now)
+      final anchors = group.map((c) {
+        return {
+          'id': c.Anchor, // The ID in the HTML (e.g. "p1")
+          'chapterIndex': _chapters.indexOf(c),
+        };
+      }).toList();
+
+      // Refresh highlights
+      final highlights = await ref
           .read(bookRepositoryProvider)
           .getHighlights(widget.book.id);
 
       setState(() {
-        _currentHighlights = allHighlights;
+        _currentHighlights = highlights;
       });
 
-      _webViewController?.loadData(
-        data: _generateHtml(
+      print(
+        "ReaderScreen: Loading chapter $index (Spine $spineIndex). Start: $startAnchor, End: $endAnchor",
+      );
+      await _webViewController?.loadData(
+        data: ReaderHtmlGenerator.generateHtml(
           content,
+          theme: _theme,
+          fontSize: _fontSize,
+          fontFamily: _fontFamily,
+          scrollMode: _scrollMode,
+          currentChapterIndex: _currentChapterIndex,
           initialProgress: initialCfi,
           highlights: _currentHighlights,
+          spineIndex: spineIndex,
+          anchors: anchors,
+          scrollToAnchor:
+              null, // We slice, so we start at top usually (unless CFI)
+          startAnchor: startAnchor,
+          endAnchor: endAnchor,
         ),
       );
     }
   }
 
-  void _saveProgress(int chapterIndex, String cfiPath) {
-    // If path is empty, don't overwrite with empty unless it's a new chapter start
-    final cfi = '{"chapterIndex": $chapterIndex, "cfi": "$cfiPath"}';
-    ref.read(bookRepositoryProvider).saveReadingProgress(widget.book.id, cfi);
+  Future<void> _saveProgress(int chapterIndex, String cfi) async {
+    final progressJson = jsonEncode({
+      'chapterIndex': chapterIndex,
+      'cfi': cfi,
+      'timestamp': DateTime.now().millisecondsSinceEpoch,
+    });
+    await ref
+        .read(bookRepositoryProvider)
+        .saveReadingProgress(widget.book.id, progressJson);
   }
 
-  // Append next chapter for continuous scroll
-  Future<void> _appendNextChapter() async {
-    if (_currentChapterIndex < _chapters.length - 1) {
-      _currentChapterIndex++;
+  // Helper to group chapters by their source file (spine item)
+  // This is crucial because EPUBs often split one file into multiple "chapters" (anchors)
+  List<List<EpubChapterRef>> _groupChaptersBySpine(
+    List<EpubChapterRef> chapters,
+  ) {
+    List<List<EpubChapterRef>> groups = [];
+    if (chapters.isEmpty) return groups;
 
-      // Save progress
-      _saveProgress(_currentChapterIndex, '');
+    String? currentFileName;
+    List<EpubChapterRef> currentGroup = [];
 
-      final content = _epubService.getChapterContent(
-        _chapters[_currentChapterIndex],
-      );
-      if (content != null) {
-        // We need to strip <html>, <head>, <body> tags to append just the body content
-        String bodyContent = content;
-        final bodyMatch = RegExp(
-          r'<body[^>]*>(.*?)<\/body>',
-          caseSensitive: false,
-          dotAll: true,
-        ).firstMatch(content);
-        if (bodyMatch != null) {
-          bodyContent = bodyMatch.group(1) ?? content;
+    for (var chapter in chapters) {
+      if (chapter.ContentFileName != currentFileName) {
+        if (currentGroup.isNotEmpty) {
+          groups.add(currentGroup);
         }
-
-        // Escape for JS
-        final escapedContent = bodyContent
-            .replaceAll("'", "\\'")
-            .replaceAll("\n", "");
-
-        await _webViewController?.evaluateJavascript(
-          source:
-              '''
-          var div = document.createElement('div');
-          div.innerHTML = '$escapedContent';
-          // Ensure it starts on a new column/page
-          if (${_scrollMode == ReaderScrollMode.horizontal}) {
-             div.style.breakBefore = 'column';
-             div.style.marginTop = '0';
-             div.style.borderTop = 'none';
-             div.style.paddingTop = '0';
-          } else {
-             div.style.marginTop = '50px';
-             div.style.borderTop = '1px solid #ccc';
-             div.style.paddingTop = '50px';
-          }
-          document.body.appendChild(div);
-        ''',
-        );
-
-        setState(() {});
+        currentGroup = [chapter];
+        currentFileName = chapter.ContentFileName;
+      } else {
+        currentGroup.add(chapter);
       }
     }
+    if (currentGroup.isNotEmpty) {
+      groups.add(currentGroup);
+    }
+
+    print(
+      "ReaderScreen: Grouped ${chapters.length} chapters into ${groups.length} spine items",
+    );
+    for (var i = 0; i < groups.length; i++) {
+      print(
+        "Spine Group $i: ${groups[i].length} chapters. File: ${groups[i].first.ContentFileName}",
+      );
+    }
+
+    return groups;
   }
 
   void _toggleControls() {
+    if (_isSettingsOpen) return;
     print("Toggling controls. Current state: $_showControls");
     setState(() {
       _showControls = !_showControls;
@@ -660,6 +331,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         verticalScrollBarEnabled: false,
         // Disable native paging to allow JS snapping to work
         isPagingEnabled: false,
+        // Attempt to suppress default context menu
+        disableContextMenu: true,
       ),
     );
   }
@@ -686,6 +359,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
+  String _colorToHex(Color color) {
+    return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
+  }
+
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -698,435 +375,344 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: scaffoldColor,
-      drawer: Drawer(
+      // appBar and bottomNavigationBar removed to allow overlay
+      drawer: ReaderDrawer(
+        bookTitle: widget.book.title,
+        chapters: _chapters,
+        activeChapterIndex: _activeChapterIndex,
         backgroundColor: scaffoldColor,
-        child: Column(
-          children: [
-            DrawerHeader(
-              decoration: BoxDecoration(
-                border: Border(
-                  bottom: BorderSide(color: textColor.withOpacity(0.1)),
-                ),
-              ),
-              child: Center(
-                child: Text(
-                  widget.book.title,
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    color: textColor,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 18,
-                  ),
-                ),
-              ),
-            ),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _chapters.length,
-                itemBuilder: (context, index) {
-                  final chapter = _chapters[index];
-                  final isSelected = index == _currentChapterIndex;
-                  return ListTile(
-                    title: Text(
-                      chapter.Title ?? 'Chapter ${index + 1}',
-                      style: TextStyle(
-                        color: isSelected
-                            ? Theme.of(context).primaryColor
-                            : textColor,
-                        fontWeight: isSelected
-                            ? FontWeight.bold
-                            : FontWeight.normal,
-                      ),
-                    ),
-                    onTap: () {
-                      _loadChapter(index);
-                      Navigator.pop(context);
-                    },
-                  );
-                },
-              ),
-            ),
-          ],
-        ),
+        textColor: textColor,
+        activeColor: Theme.of(context).primaryColor,
+        onChapterSelected: (index) {
+          if (index >= 0 && index < _chapters.length) {
+            _loadChapter(index);
+          }
+        },
       ),
+      bottomNavigationBar: null, // Removed
       body: Stack(
         children: [
           // WebView
           SafeArea(
             child: InAppWebView(
+              initialSettings: InAppWebViewSettings(
+                transparentBackground: true,
+                supportZoom: false,
+                horizontalScrollBarEnabled: false,
+                verticalScrollBarEnabled: false,
+                isPagingEnabled: false,
+                disableContextMenu: true,
+              ),
               initialData: InAppWebViewInitialData(
-                data: _generateHtml(
-                  _epubService.getChapterContent(
-                        _chapters[_currentChapterIndex],
-                      ) ??
-                      '',
-                  initialProgress: _initialCfiPath,
-                  highlights: _currentHighlights,
-                  // Since build() is synchronous, we can't await here.
-                  // We'll rely on _loadBook calling _loadChapter which is async and fetches highlights.
-                  // So initialData can be empty of highlights, and _loadBook will reload with them?
-                  // Actually _loadBook calls _loadChapter.
-                  // But `initialData` is used for the very first render before `_webViewController` is ready?
-                  // `_loadBook` calls `_loadChapter` which calls `loadData`.
-                  // So `initialData` is just a placeholder or for fast start.
-                  // If we leave it empty, it's fine, `_loadChapter` will overwrite it quickly.
-                ),
+                data: '''
+                  <!DOCTYPE html>
+                  <html>
+                  <head>
+                    <style>
+                      body { 
+                        display: flex; 
+                        justify-content: center; 
+                        align-items: center; 
+                        height: 100vh; 
+                        margin: 0; 
+                        font-family: sans-serif; 
+                        color: #888;
+                      }
+                    </style>
+                  </head>
+                  <body>
+                    Loading...
+                  </body>
+                  </html>
+                ''',
               ),
               onWebViewCreated: (controller) {
                 _webViewController = controller;
+                print("ReaderScreen: onWebViewCreated");
+
+                // If book is already loaded, trigger spine load
+                if (_chapters.isNotEmpty) {
+                  print(
+                    "ReaderScreen: Book already loaded, triggering _loadChapter($_currentChapterIndex)",
+                  );
+                  _loadChapter(
+                    _currentChapterIndex,
+                    initialCfi: _initialCfiPath,
+                  );
+                } else {
+                  print("ReaderScreen: Book not yet loaded, waiting...");
+                }
+
+                // Scroll Handlers
                 controller.addJavaScriptHandler(
-                  handlerName: 'onScrollToEnd',
+                  handlerName: 'onNextChapter',
                   callback: (args) {
-                    _appendNextChapter();
+                    print("ReaderScreen: onNextChapter triggered from JS");
+                    if (_currentChapterIndex < _chapters.length - 1) {
+                      _loadChapter(_currentChapterIndex + 1);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text(
+                            'You have reached the end of the book.',
+                          ),
+                        ),
+                      );
+                    }
                   },
                 );
+
+                controller.addJavaScriptHandler(
+                  handlerName: 'onActiveChapterChanged',
+                  callback: (args) {
+                    if (args.isNotEmpty && args[0] != null) {
+                      setState(() {
+                        _activeChapterIndex = args[0] as int;
+                        _currentChapterIndex = _activeChapterIndex;
+                      });
+                      _saveProgress(_activeChapterIndex, '');
+                    }
+                  },
+                );
+
                 controller.addJavaScriptHandler(
                   handlerName: 'onScrollProgress',
                   callback: (args) {
                     if (args.isNotEmpty) {
                       final String path = args[0].toString();
-                      _saveProgress(_currentChapterIndex, path);
+                      _saveProgress(_activeChapterIndex, path);
                     }
                   },
                 );
+
                 controller.addJavaScriptHandler(
-                  handlerName: 'onHighlight',
-                  callback: (args) async {
-                    print("DEBUG: onHighlight called with args: $args");
+                  handlerName: 'onTap',
+                  callback: (args) {
+                    _toggleControls();
+                  },
+                );
+
+                controller.addJavaScriptHandler(
+                  handlerName: 'onMenuAction',
+                  callback: (args) {
+                    if (args.length >= 3) {
+                      final action = args[0] as String;
+                      final cfi = args[1] as String;
+                      final text = args[2] as String;
+                      _handleMenuAction(action, cfi, text);
+                    }
+                  },
+                );
+
+                controller.addJavaScriptHandler(
+                  handlerName: 'onHighlightClick',
+                  callback: (args) {
                     if (args.isNotEmpty) {
-                      try {
-                        final String cfiString = args[0].toString();
-                        final Map<String, dynamic> cfiJson = jsonDecode(
-                          cfiString,
-                        );
-                        final String textContent =
-                            cfiJson['text'] ?? "Highlight";
-
-                        // Inject chapter index
-                        cfiJson['chapterIndex'] = _currentChapterIndex;
-                        final String finalCfiString = jsonEncode(cfiJson);
-
-                        print(
-                          "DEBUG: Saving highlight: $textContent for book ${widget.book.id}",
-                        );
-
-                        final String id = await ref
-                            .read(bookRepositoryProvider)
-                            .addHighlight(
-                              widget.book.id,
-                              textContent,
-                              finalCfiString,
-                            );
-
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Highlight saved!')),
-                          );
-                          // Show options modal
-                          _showHighlightOptions(context, id);
-                        }
-                      } catch (e) {
-                        print("Error saving highlight: $e");
-                      }
+                      final id = args[0] as String;
+                      _showHighlightOptions(context, id);
                     }
                   },
                 );
               },
               onConsoleMessage: (controller, consoleMessage) {
-                if (consoleMessage.message == "TOGGLE_CONTROLS") {
-                  _toggleControls();
-                }
+                print("JS Console: ${consoleMessage.message}");
               },
-              initialSettings: InAppWebViewSettings(
-                transparentBackground: true,
-                supportZoom: false,
-                // Hide scrollbars to avoid jumping when content loads
-                horizontalScrollBarEnabled: false,
-                verticalScrollBarEnabled: false,
-                // Enable native paging for horizontal mode (iOS)
-                isPagingEnabled: false,
-              ),
-              contextMenu: ContextMenu(
-                menuItems: [
-                  ContextMenuItem(
-                    id: 1,
-                    title: "Highlight",
-                    action: () async {
-                      // Get selected text and CFI via JS
-                      final result = await _webViewController
-                          ?.evaluateJavascript(source: "getCFI()");
-
-                      if (result != null && result != 'null') {
-                        // Apply visual highlight immediately
-                        await _webViewController?.evaluateJavascript(
-                          source: "applyHighlight('$result')",
-                        );
-
-                        // Save highlight
-                        // Result is a JSON string with text and paths
-                        // We store the whole JSON in the 'cfi' column for restoration
-                        // And extract text for the 'text' column
-                        // But wait, the result is ALREADY a JSON string from JS?
-                        // evaluateJavascript returns dynamic. If it returns a string, it might be double quoted?
-                        // Let's assume it returns the string.
-
-                        // We need to parse it to get the text content for the DB
-                        // Or we can just pass the text separately from JS?
-                        // Let's just use the JSON string as the CFI.
-                        // And we need the text.
-
-                        // Let's do a quick parse or ask JS for text separately?
-                        // JS `getCFI` returns JSON with `text` field.
-
-                        String cfiString = result.toString();
-                        // Simple regex to extract text to avoid importing dart:convert if not needed
-                        // But we should use dart:convert.
-                        // Let's just use a regex for now or import convert at top?
-                        // I'll use a regex for safety/speed in this snippet.
-                        final textMatch = RegExp(
-                          r'"text":"(.*?)"',
-                        ).firstMatch(cfiString);
-                        String textContent = textMatch?.group(1) ?? "Highlight";
-                        // Unescape json text if needed?
-                        // Ideally we should use dart:convert.
-
-                        await ref
-                            .read(bookRepositoryProvider)
-                            .addHighlight(
-                              widget.book.id,
-                              textContent, // This might be raw JSON escaped, but acceptable for now
-                              cfiString,
-                            );
-
-                        if (mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Highlight saved!')),
-                          );
-                        }
-
-                        // Clear selection
-                        await _webViewController?.evaluateJavascript(
-                          source: "window.getSelection().removeAllRanges()",
-                        );
-                      }
-                    },
-                  ),
-                ],
-              ),
+              onLoadStop: (controller, url) async {
+                print("ReaderScreen: onLoadStop");
+              },
             ),
           ),
 
-          // Controls Overlay
-          if (_showControls) ...[
-            // Top Bar
-            Positioned(
-              top: 0,
-              left: 0,
-              right: 0,
-              child: AppBar(
-                backgroundColor: scaffoldColor.withOpacity(0.95),
-                elevation: 0,
-                iconTheme: IconThemeData(color: textColor),
-                title: Column(
-                  children: [
-                    Text(
-                      widget.book.title,
-                      style: TextStyle(color: textColor, fontSize: 16),
-                    ),
-                    Text(
-                      '${_currentChapterIndex + 1} / ${_chapters.length}',
-                      style: TextStyle(
-                        color: textColor.withOpacity(0.7),
-                        fontSize: 12,
-                      ),
-                    ),
-                  ],
-                ),
-                leading: IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-                actions: [
-                  IconButton(
-                    icon: const Icon(Icons.list),
-                    onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.format_size),
-                    onPressed: () =>
-                        _showSettingsModal(context, textColor, scaffoldColor),
-                  ),
-                ],
+          if (_isLoading)
+            Container(
+              color: scaffoldColor,
+              child: const Center(child: CircularProgressIndicator()),
+            ),
+
+          // Top Bar (Overlay)
+          Positioned(
+            top: 0,
+            left: 0,
+            right: 0,
+            child: ReaderTopBar(
+              showControls: _showControls,
+              backgroundColor: scaffoldColor,
+              textColor: textColor,
+              onExit: () {
+                Navigator.pop(context);
+              },
+              onTOC: () {
+                _scaffoldKey.currentState?.openDrawer();
+              },
+              onSettings: () => _showSettingsModal(context),
+            ),
+          ),
+
+          // Bottom Bar (Overlay)
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: SafeArea(
+              top: false,
+              child: ReaderNavigationBar(
+                showControls: _showControls,
+                backgroundColor: scaffoldColor,
+                textColor: textColor,
+                previousChapterTitle:
+                    _chapters.isNotEmpty && _currentChapterIndex > 0
+                    ? _chapters[_currentChapterIndex - 1].Title ?? ''
+                    : '',
+                nextChapterTitle:
+                    _chapters.isNotEmpty &&
+                        _currentChapterIndex < _chapters.length - 1
+                    ? _chapters[_currentChapterIndex + 1].Title ?? ''
+                    : '',
+                canGoPrevious: _currentChapterIndex > 0,
+                canGoNext: _currentChapterIndex < _chapters.length - 1,
+                onPrevious: () => _loadChapter(_currentChapterIndex - 1),
+                onNext: () => _loadChapter(_currentChapterIndex + 1),
               ),
             ),
-          ],
+          ),
         ],
       ),
     );
   }
 
-  void _showSettingsModal(
-    BuildContext context,
-    Color textColor,
-    Color bgColor,
-  ) {
-    showModalBottomSheet(
+  Future<void> _handleMenuAction(String action, String cfi, String text) async {
+    switch (action) {
+      case 'highlight':
+        await _createHighlight(text, cfi);
+        break;
+      case 'assign':
+        // For assign, we first create the highlight, then show the dialog
+        final highlightId = await _createHighlight(text, cfi);
+        if (highlightId != null && mounted) {
+          _showAssignCharacterDialog(context, highlightId);
+        }
+        break;
+      case 'copy':
+        await Clipboard.setData(ClipboardData(text: text));
+        if (mounted) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
+        }
+        break;
+      case 'share':
+        await Share.share(text);
+        break;
+    }
+  }
+
+  Future<String?> _createHighlight(String text, String cfi) async {
+    try {
+      // Create highlight JSON
+      final Map<String, dynamic> cfiJson = jsonDecode(cfi);
+      cfiJson['chapterIndex'] = _activeChapterIndex;
+      if (!cfiJson.containsKey('text')) {
+        cfiJson['text'] = text;
+      }
+      final String finalCfiString = jsonEncode(cfiJson);
+
+      final id = await ref
+          .read(bookRepositoryProvider)
+          .addHighlight(widget.book.id, text, finalCfiString);
+
+      // Apply visual highlight in JS
+      // FIX: Properly encode the CFI string for JS injection
+      final encodedCfi = jsonEncode(
+        cfi,
+      ); // Encodes to a valid JS string literal content
+      await _webViewController?.evaluateJavascript(
+        source: "applyHighlight($encodedCfi, '$id')",
+      );
+
+      // Add to local list so it persists in this session without reload
+      setState(() {
+        _currentHighlights.add(
+          Quote(
+            id: id,
+            textContent: text,
+            bookId: widget.book.id,
+            cfi: finalCfiString,
+            createdAt: DateTime.now(),
+          ),
+        );
+      });
+
+      return id;
+    } catch (e) {
+      print("Error saving highlight: $e");
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error saving highlight: $e')));
+      }
+      return null;
+    }
+  }
+
+  void _updateFontSize(double size) {
+    setState(() {
+      _fontSize = size;
+    });
+    ref.read(readerSettingsRepositoryProvider).setFontSize(size);
+    _webViewController?.evaluateJavascript(
+      source: "document.body.style.fontSize = '${size}%';",
+    );
+  }
+
+  void _showSettingsModal(BuildContext context) async {
+    setState(() {
+      _isSettingsOpen = true;
+    });
+    await showModalBottomSheet(
       context: context,
-      backgroundColor: bgColor,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Scroll Mode Toggle
-            Text(
-              'Scroll Mode',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildScrollModeButton(
-                  ReaderScrollMode.vertical,
-                  'Vertical',
-                  Icons.swap_vert,
-                ),
-                _buildScrollModeButton(
-                  ReaderScrollMode.horizontal,
-                  'Horizontal',
-                  Icons.swap_horiz,
-                ),
-              ],
-            ),
-            const SizedBox(height: 24),
+      builder: (context) => ReaderSettingsModal(
+        theme: _theme,
+        scrollMode: _scrollMode,
+        fontSize: _fontSize,
+        fontFamily: _fontFamily,
+        activeChapterIndex: _activeChapterIndex,
+        totalChapters: _chapters.length,
+        onThemeChanged: (theme) {
+          setState(() {
+            _theme = theme;
+          });
+          ref.read(readerSettingsRepositoryProvider).setTheme(theme);
 
-            Text(
-              'Theme',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildThemeButton(ReaderTheme.light, 'Light', Icons.light_mode),
-                _buildThemeButton(
-                  ReaderTheme.sepia,
-                  'Sepia',
-                  Icons.chrome_reader_mode,
-                ),
-                _buildThemeButton(ReaderTheme.dark, 'Dark', Icons.dark_mode),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Font Size',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-            ),
-            Slider(
-              value: _fontSize,
-              min: 50,
-              max: 200,
-              activeColor: textColor,
-              inactiveColor: textColor.withOpacity(0.3),
-              onChanged: (value) {
-                setState(() {
-                  _fontSize = value;
-                });
-                _loadChapter(_currentChapterIndex);
-              },
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Font Family',
-              style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildFontButton('Serif', 'Georgia, serif'),
-                _buildFontButton('Sans', 'Helvetica, Arial, sans-serif'),
-              ],
-            ),
-          ],
-        ),
+          final textColor = _colorToHex(_getTextColor());
+          _webViewController?.evaluateJavascript(
+            source: "setTheme('$textColor')",
+          );
+        },
+        onScrollModeChanged: (mode) {
+          setState(() {
+            _scrollMode = mode;
+          });
+          ref.read(readerSettingsRepositoryProvider).setScrollMode(mode);
+          _updateWebViewSettings();
+          _loadChapter(_currentChapterIndex);
+        },
+        onFontSizeChanged: (size) {
+          _updateFontSize(size);
+        },
+        onFontFamilyChanged: (family) {
+          setState(() {
+            _fontFamily = family;
+          });
+          ref.read(readerSettingsRepositoryProvider).setFontFamily(family);
+          _webViewController?.evaluateJavascript(
+            source: "setFontFamily('$family')",
+          );
+        },
       ),
     );
-  }
-
-  Widget _buildThemeButton(ReaderTheme theme, String label, IconData icon) {
-    final isSelected = _theme == theme;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _theme = theme;
-        });
-        _loadChapter(_currentChapterIndex);
-        Navigator.pop(context);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: isSelected ? Colors.blue : Colors.grey),
-          borderRadius: BorderRadius.circular(20),
-          color: isSelected ? Colors.blue.withOpacity(0.1) : null,
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: isSelected ? Colors.blue : Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.blue : Colors.grey,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildScrollModeButton(
-    ReaderScrollMode mode,
-    String label,
-    IconData icon,
-  ) {
-    final isSelected = _scrollMode == mode;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _scrollMode = mode;
-        });
-        _updateWebViewSettings(); // Update settings immediately
-        _loadChapter(_currentChapterIndex);
-        Navigator.pop(context);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: isSelected ? Colors.blue : Colors.grey),
-          borderRadius: BorderRadius.circular(20),
-          color: isSelected ? Colors.blue.withOpacity(0.1) : null,
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 18, color: isSelected ? Colors.blue : Colors.grey),
-            const SizedBox(width: 8),
-            Text(
-              label,
-              style: TextStyle(
-                color: isSelected ? Colors.blue : Colors.grey,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
+    setState(() {
+      _isSettingsOpen = false;
+    });
   }
 
   void _showHighlightOptions(BuildContext context, String highlightId) {
@@ -1253,36 +839,4 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       ),
     );
   }
-
-  Widget _buildFontButton(String label, String family) {
-    final isSelected = _fontFamily == family;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _fontFamily = family;
-        });
-        _loadChapter(_currentChapterIndex);
-        Navigator.pop(context);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-        decoration: BoxDecoration(
-          border: Border.all(color: isSelected ? Colors.blue : Colors.grey),
-          borderRadius: BorderRadius.circular(20),
-          color: isSelected ? Colors.blue.withOpacity(0.1) : null,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: isSelected ? Colors.blue : Colors.grey,
-            fontWeight: FontWeight.bold,
-          ),
-        ),
-      ),
-    );
-  }
 }
-
-enum ReaderTheme { light, dark, sepia }
-
-enum ReaderScrollMode { vertical, horizontal }

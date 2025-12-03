@@ -1,18 +1,30 @@
 import 'dart:io';
-import 'package:file_picker/file_picker.dart';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path/path.dart' as p;
 import 'data/database.dart';
+import 'data/reader_settings_repository.dart';
 import 'providers.dart';
 import 'ui/character_library.dart';
 import 'ui/discover_screen.dart';
 import 'ui/book_details_screen.dart';
 import 'ui/highlights_screen.dart';
+import 'ui/splash_screen.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-void main() {
-  runApp(const ProviderScope(child: MyApp()));
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final prefs = await SharedPreferences.getInstance();
+
+  runApp(
+    ProviderScope(
+      overrides: [sharedPreferencesProvider.overrideWithValue(prefs)],
+      child: const MyApp(),
+    ),
+  );
 }
 
 class MyApp extends StatelessWidget {
@@ -26,7 +38,7 @@ class MyApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFFD9534F)),
         useMaterial3: true,
       ),
-      home: const HomeScreen(),
+      home: const SplashScreen(),
     );
   }
 }
@@ -100,7 +112,17 @@ class LibraryScreen extends ConsumerWidget {
     final booksStream = bookRepo.watchAllBooks();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Liberry')),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            SvgPicture.asset('assets/icon.svg', height: 24),
+            const SizedBox(width: 8),
+            const Text('Library'),
+          ],
+        ),
+        centerTitle: false,
+        titleSpacing: 16,
+      ),
       body: StreamBuilder<List<Book>>(
         stream: booksStream,
         builder: (context, snapshot) {

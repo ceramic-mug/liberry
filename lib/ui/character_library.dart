@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../data/database.dart';
 import '../providers.dart';
 
@@ -12,7 +13,15 @@ class CharacterLibraryScreen extends ConsumerWidget {
     final charactersStream = charRepo.watchAllCharacters();
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Characters')),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            SvgPicture.asset('assets/icon.svg', height: 24),
+            const SizedBox(width: 8),
+            const Text('Characters'),
+          ],
+        ),
+      ),
       body: StreamBuilder<List<Character>>(
         stream: charactersStream,
         builder: (context, snapshot) {

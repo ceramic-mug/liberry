@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../data/remote/remote_book.dart';
 import '../providers.dart';
 
@@ -119,7 +120,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     final filteredStandard = _filteredStandardEbooks;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Discover Books')),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            SvgPicture.asset('assets/icon.svg', height: 24),
+            const SizedBox(width: 8),
+            const Text('Discover Books'),
+          ],
+        ),
+      ),
       body: Column(
         children: [
           // Search Bar

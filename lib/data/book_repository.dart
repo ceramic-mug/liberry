@@ -194,6 +194,9 @@ class BookRepository {
   }
 
   Future<String> addHighlight(String bookId, String text, String cfi) async {
+    print(
+      "BookRepository: Adding highlight for book $bookId. Text: ${text.substring(0, 10)}...",
+    );
     final id = const Uuid().v4();
     await _db
         .into(_db.quotes)
@@ -206,6 +209,7 @@ class BookRepository {
             // characterId is now nullable, so we don't pass it
           ),
         );
+    print("BookRepository: Highlight added with ID $id");
     return id;
   }
 
@@ -215,10 +219,13 @@ class BookRepository {
     )..where((t) => t.bookId.equals(bookId))).watch();
   }
 
-  Future<List<Quote>> getHighlights(String bookId) {
-    return (_db.select(
+  Future<List<Quote>> getHighlights(String bookId) async {
+    print("BookRepository: Fetching highlights for book $bookId");
+    final results = await (_db.select(
       _db.quotes,
     )..where((t) => t.bookId.equals(bookId))).get();
+    print("BookRepository: Found ${results.length} highlights");
+    return results;
   }
 
   Future<void> assignQuoteToCharacter(String quoteId, String? characterId) {

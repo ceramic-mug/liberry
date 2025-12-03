@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import '../data/database.dart';
 import '../data/character_repository.dart';
 import 'dart:io';
@@ -23,7 +24,15 @@ class _HighlightsScreenState extends ConsumerState<HighlightsScreen> {
     final charRepo = ref.watch(characterRepositoryProvider);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Highlights')),
+      appBar: AppBar(
+        title: Row(
+          children: [
+            SvgPicture.asset('assets/icon.svg', height: 24),
+            const SizedBox(width: 8),
+            const Text('Highlights'),
+          ],
+        ),
+      ),
       body: Column(
         children: [
           Padding(
