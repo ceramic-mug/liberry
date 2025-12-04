@@ -49,6 +49,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   String _initialCfiPath = '';
   int? _initialChapterIndex;
   bool _isSettingsOpen = false;
+  bool _isGutenberg = false;
 
   @override
   void initState() {
@@ -107,6 +108,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         _spineGroups = _groupChaptersBySpine(_chapters);
       });
       print('ReaderScreen: Created ${_spineGroups.length} spine groups');
+
+      // Detect if this is a Project Gutenberg book
+      final metadata = _epubService.book?.Schema?.Package?.Metadata;
+      if (metadata != null) {
+        final publishers = metadata.Publishers?.join(' ') ?? '';
+        final rights = metadata.Rights?.join(' ') ?? '';
+        final description = metadata.Description ?? '';
+
+        if (publishers.contains('Project Gutenberg') ||
+            rights.contains('Project Gutenberg') ||
+            description.contains('Project Gutenberg')) {
+          _isGutenberg = true;
+          print('ReaderScreen: Detected Project Gutenberg book');
+        }
+      }
 
       // Load settings
       final settingsRepo = ref.read(readerSettingsRepositoryProvider);
@@ -260,6 +276,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
               null, // We slice, so we start at top usually (unless CFI)
           startAnchor: startAnchor,
           endAnchor: endAnchor,
+          isGutenberg: _isGutenberg,
         ),
       );
     }
@@ -626,7 +643,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         cfi,
       ); // Encodes to a valid JS string literal content
       await _webViewController?.evaluateJavascript(
-        source: "applyHighlight($encodedCfi, '$id')",
+        source: "applyHighlight($encodedCfi, '$id'); null;",
       );
 
       // Add to local list so it persists in this session without reload
@@ -660,7 +677,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     });
     ref.read(readerSettingsRepositoryProvider).setFontSize(size);
     _webViewController?.evaluateJavascript(
-      source: "document.body.style.fontSize = '${size}%';",
+      source:
+          "document.body.style.setProperty('font-size', '${size}%', 'important'); null;",
     );
   }
 
@@ -685,7 +703,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
           final textColor = _colorToHex(_getTextColor());
           _webViewController?.evaluateJavascript(
-            source: "setTheme('$textColor')",
+            source: "setTheme('$textColor'); null;",
           );
         },
         onScrollModeChanged: (mode) {
@@ -705,7 +723,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           });
           ref.read(readerSettingsRepositoryProvider).setFontFamily(family);
           _webViewController?.evaluateJavascript(
-            source: "setFontFamily('$family')",
+            source: "setFontFamily('$family'); null;",
           );
         },
       ),
@@ -742,7 +760,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     .read(bookRepositoryProvider)
                     .deleteHighlight(highlightId);
                 _webViewController?.evaluateJavascript(
-                  source: "removeHighlight('$highlightId')",
+                  source: "removeHighlight('$highlightId'); null;",
                 );
                 setState(() {
                   _currentHighlights.removeWhere((h) => h.id == highlightId);

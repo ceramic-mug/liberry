@@ -19,11 +19,84 @@ class ReaderHtmlGenerator {
     String? scrollToAnchor,
     String? startAnchor,
     String? endAnchor,
+    bool isGutenberg = false,
   }) {
+    // FIX: Project Gutenberg and other XHTML epubs often use self-closing divs (e.g. <div class="pgmonospaced"/>).
+    // In HTML5 parsers (WebView and html package), these are treated as opening tags <div>, causing the rest of the document
+    // to be nested inside them. This inherits unwanted styles (like monospace) and breaks layout.
+    // We replace <div ... /> with <div ...></div> BEFORE any parsing happens.
+    String processedContent = content.replaceAllMapped(
+      RegExp(r'<div([^>]*)/>'),
+      (match) => '<div${match.group(1)}></div>',
+    );
+
+    // Fallback detection: check raw content for Gutenberg indicators
+    // We check this early to ensure we catch it even if metadata is missing
+    final bool hasPG = content.contains('Project Gutenberg');
+    final bool hasUrl = content.contains('www.gutenberg.org');
+    final bool hasMaker = content.contains('Ebookmaker');
+    final bool hasCss = content.contains('pgepub.css');
+    final bool hasMonoClass = content.contains('pgmonospaced');
+    final bool hasMakerClass = content.contains('x-ebookmaker');
+
+    final bool effectiveIsGutenberg =
+        isGutenberg ||
+        hasPG ||
+        hasUrl ||
+        hasMaker ||
+        hasCss ||
+        hasMonoClass ||
+        hasMakerClass;
+
     // Prune content if anchors are provided
-    String processedContent = content;
     if (startAnchor != null || endAnchor != null) {
-      processedContent = _pruneHtml(content, startAnchor, endAnchor);
+      processedContent = _pruneHtml(processedContent, startAnchor, endAnchor);
+    }
+
+    if (effectiveIsGutenberg) {
+      // Aggressive sanitization for Project Gutenberg books to ensure full control of formatting
+      // 1. Remove all external stylesheets
+      processedContent = processedContent.replaceAll(
+        RegExp(
+          r'<link[^>]*rel=["'
+          ']?stylesheet["'
+          ']?[^>]*>',
+          caseSensitive: false,
+        ),
+        '',
+      );
+      // 2. Remove all inline style attributes
+      processedContent = processedContent.replaceAll(
+        RegExp(
+          r'\sstyle=["'
+          '][^"'
+          ']*["'
+          ']',
+          caseSensitive: false,
+        ),
+        '',
+      );
+      // 3. Remove class attributes
+      processedContent = processedContent.replaceAll(
+        RegExp(
+          r'\sclass=["'
+          '][^"'
+          ']*["'
+          ']',
+          caseSensitive: false,
+        ),
+        '',
+      );
+
+      // 4. Remove empty paragraphs that just contain breaks (fixes excessive spacing)
+      processedContent = processedContent.replaceAll(
+        RegExp(r'<p>\s*(?:<br\s*/?>\s*)+\s*</p>', caseSensitive: false),
+        '',
+      );
+    } else {
+      // For non-Gutenberg books, we still might want to remove specific problematic classes if identified,
+      // but for now we leave them as is, or apply the specific fix if needed.
+      // The self-closing div fix above handles the structural issue.
     }
 
     String bgColor;
@@ -82,11 +155,11 @@ class ReaderHtmlGenerator {
       // Vertical Mode CSS
       scrollCss = '''
         body {
-          padding: 50px 30px 40px 30px;
-          margin: 0 auto;
-          max-width: 800px;
-          box-sizing: border-box;
-          overflow-x: hidden;
+          padding: 50px 30px 40px 30px !important;
+          margin: 0 auto !important;
+          max-width: 800px !important;
+          box-sizing: border-box !important;
+          overflow-x: hidden !important;
         }
         img, video, svg {
           max-width: 100%;
@@ -174,18 +247,35 @@ class ReaderHtmlGenerator {
           -webkit-touch-callout: none !important;
         }
         
-        /* Force font size inheritance to respect body setting */
-        p, div, span, li, blockquote, a {
+        /* Force global font settings to override ANY book defaults */
+        /* We target 'body *' so we don't override the body's own settings (which we set above) */
+        body * {
+            font-family: inherit !important;
             font-size: inherit !important;
             line-height: inherit !important;
+            max-width: 100% !important;
+            box-sizing: border-box !important;
+        }
+
+        /* Specific formatting for text blocks */
+        p, div, span, li, blockquote, a {
+            white-space: normal !important; /* Force normal wrapping (fixes OCR line breaks) */
+            word-wrap: break-word !important;
+            margin-top: 0 !important;
+            margin-bottom: 1em !important;
         }
         
-        h1 { font-size: 2em !important; }
-        h2 { font-size: 1.5em !important; }
-        h3 { font-size: 1.17em !important; }
-        h4 { font-size: 1em !important; }
-        h5 { font-size: 0.83em !important; }
-        h6 { font-size: 0.67em !important; }
+        pre {
+            /* font-family: monospace !important;  <-- Removed to allow user font preference */
+            white-space: pre-wrap !important;
+        }
+        
+        h1 { font-size: 2em !important; margin-left: 0 !important; margin-right: 0 !important; }
+        h2 { font-size: 1.5em !important; margin-left: 0 !important; margin-right: 0 !important; }
+        h3 { font-size: 1.17em !important; margin-left: 0 !important; margin-right: 0 !important; }
+        h4 { font-size: 1em !important; margin-left: 0 !important; margin-right: 0 !important; }
+        h5 { font-size: 0.83em !important; margin-left: 0 !important; margin-right: 0 !important; }
+        h6 { font-size: 0.67em !important; margin-left: 0 !important; margin-right: 0 !important; }
           /* Custom Menu */
         #custom-menu {
             position: absolute;
@@ -675,10 +765,28 @@ class ReaderHtmlGenerator {
 
     ''';
 
+    // Build the final HTML with CSS injected
+    // We use a robust injection strategy
     String finalHtml = processedContent;
 
+    // Ensure standard HTML5 doctype and remove XML namespaces that might trigger quirks/XML mode
+    if (!finalHtml.toLowerCase().startsWith('<!doctype html>')) {
+      finalHtml = '<!DOCTYPE html>\n$finalHtml';
+    }
+    finalHtml = finalHtml.replaceAll(
+      RegExp(
+        r'xmlns=["'
+        '][^"'
+        ']*["'
+        ']',
+      ),
+      '',
+    );
+
     // Inject CSS
-    if (finalHtml.contains('<head>')) {
+    if (finalHtml.contains('</head>')) {
+      finalHtml = finalHtml.replaceFirst('</head>', '$css</head>');
+    } else if (finalHtml.contains('<head>')) {
       finalHtml = finalHtml.replaceFirst('<head>', '<head>$css');
     } else if (finalHtml.contains('<html>')) {
       finalHtml = finalHtml.replaceFirst('<html>', '<html><head>$css</head>');
