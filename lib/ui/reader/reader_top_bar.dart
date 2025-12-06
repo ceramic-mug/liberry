@@ -25,39 +25,43 @@ class ReaderTopBar extends StatelessWidget implements PreferredSizeWidget {
     // If we return SizedBox.shrink(), it effectively hides it.
     if (!showControls) return const SizedBox.shrink();
 
-    return AppBar(
-      backgroundColor: backgroundColor,
-      elevation: 0,
-      toolbarHeight: 40,
-      // Remove the default back button since we have our own Exit button
-      automaticallyImplyLeading: false,
-      title: Row(
-        children: [
-          IconButton(
-            icon: Icon(Icons.close, color: textColor),
-            onPressed: onExit,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-          const Spacer(),
-          IconButton(
-            icon: Icon(Icons.list, color: textColor),
-            onPressed: onTOC,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-          const SizedBox(width: 16),
-          IconButton(
-            // "Text icon (like big T little T)"
-            icon: Icon(Icons.format_size, color: textColor),
-            onPressed: onSettings,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
-        ],
+    return GestureDetector(
+      onTap: () {}, // Consume taps
+      behavior: HitTestBehavior.opaque,
+      child: AppBar(
+        backgroundColor: backgroundColor,
+        elevation: 0,
+        toolbarHeight: 40,
+        // Remove the default back button since we have our own Exit button
+        automaticallyImplyLeading: false,
+        title: Row(
+          children: [
+            IconButton(
+              icon: Icon(Icons.close, color: textColor),
+              onPressed: onExit,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const Spacer(),
+            IconButton(
+              icon: Icon(Icons.list, color: textColor),
+              onPressed: onTOC,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+            const SizedBox(width: 16),
+            IconButton(
+              // "Text icon (like big T little T)"
+              icon: Icon(Icons.format_size, color: textColor),
+              onPressed: onSettings,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(),
+            ),
+          ],
+        ),
+        // We use title with a Row to have full control over layout
+        centerTitle: true,
       ),
-      // We use title with a Row to have full control over layout
-      centerTitle: true,
     );
   }
 

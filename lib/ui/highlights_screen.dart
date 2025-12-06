@@ -232,10 +232,7 @@ class _HighlightsScreenState extends ConsumerState<HighlightsScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => ReaderScreen(
-                              book: item.book,
-                              initialCfi: item.quote.cfi ?? '',
-                            ),
+                            builder: (context) => ReaderScreen(book: item.book),
                           ),
                         );
                       },

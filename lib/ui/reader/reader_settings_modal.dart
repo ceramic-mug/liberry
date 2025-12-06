@@ -329,7 +329,7 @@ class _ReaderSettingsModalState extends State<ReaderSettingsModal> {
       case ReaderTheme.light:
         return Colors.black;
       case ReaderTheme.dark:
-        return Colors.white;
+        return const Color(0xFFE0E0E0); // Off-white for better contrast
       case ReaderTheme.sepia:
         return const Color(0xFF5B4636);
     }
