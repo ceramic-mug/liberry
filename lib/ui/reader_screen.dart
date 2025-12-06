@@ -1,28 +1,29 @@
-import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:share_plus/share_plus.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:epubx/epubx.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import '../data/database.dart';
-import '../services/epub_service.dart';
-import '../data/reader_settings_repository.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:liberry/data/database.dart';
+import 'package:liberry/data/book_repository.dart';
+import 'package:liberry/data/reader_settings_repository.dart';
+import 'package:liberry/providers.dart';
+import 'package:liberry/services/epub_service.dart';
+import 'package:liberry/ui/reader/reader_html_generator.dart';
+import 'package:liberry/ui/reader/reader_models.dart';
+import 'package:liberry/ui/reader/reader_settings_modal.dart';
+import 'package:epubx/epubx.dart' as epub;
+import 'package:share_plus/share_plus.dart';
 
-import '../providers.dart';
-import 'reader/reader_models.dart';
-import 'reader/reader_html_generator.dart';
-import 'reader/reader_settings_modal.dart';
-import 'reader/reader_navigation_bar.dart';
-import 'reader/reader_drawer.dart';
-import 'reader/reader_top_bar.dart';
+import 'package:liberry/ui/reader/reader_drawer.dart';
+import 'package:liberry/ui/reader/reader_navigation_bar.dart';
+import 'package:liberry/ui/reader/reader_top_bar.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final Book book;
-  final String initialCfi;
 
-  const ReaderScreen({super.key, required this.book, this.initialCfi = ''});
+  const ReaderScreen({super.key, required this.book});
 
   @override
   ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
@@ -30,282 +31,121 @@ class ReaderScreen extends ConsumerStatefulWidget {
 
 class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
-  final EpubService _epubService = EpubService();
   InAppWebViewController? _webViewController;
+
+  // State
   bool _isLoading = true;
-  List<EpubChapterRef> _chapters = [];
-  List<List<EpubChapterRef>> _spineGroups = []; // Grouped by file
-  int _currentChapterIndex = 0; // Current logical chapter (TOC)
-  int _activeChapterIndex = 0; // The chapter currently visible in UI
-  List<Quote> _currentHighlights = []; // Store full Quote objects
+  bool _showControls = false;
+  List<epub.EpubChapterRef> _chapters = [];
+  List<List<epub.EpubChapterRef>> _spineGroups = [];
+  int _currentChapterIndex = 0;
+  String _currentProgressCfi = '';
 
   // Settings
-  double _fontSize = 100.0;
-  String _fontFamily = 'Georgia, serif';
   ReaderTheme _theme = ReaderTheme.light;
   ReaderScrollMode _scrollMode = ReaderScrollMode.vertical;
-  bool _showControls = false; // Start immersive
+  double _fontSize = 100.0;
+  String _fontFamily = 'Georgia';
 
-  String _initialCfiPath = '';
-  int? _initialChapterIndex;
-  bool _isSettingsOpen = false;
+  // Services
+  late EpubService _epubService;
+
   bool _isGutenberg = false;
 
   @override
   void initState() {
     super.initState();
-
-    // Load settings
-    final settingsRepo = ref.read(readerSettingsRepositoryProvider);
-    _theme = settingsRepo.getTheme();
-    _scrollMode = settingsRepo.getScrollMode();
-    _fontSize = settingsRepo.getFontSize();
-    _fontFamily = settingsRepo.getFontFamily();
-
-    // Restore progress if available
-    if (widget.initialCfi.isNotEmpty) {
-      try {
-        // Try parsing as JSON first
-        if (widget.initialCfi.startsWith('{')) {
-          try {
-            final json = jsonDecode(widget.initialCfi);
-            if (json['chapterIndex'] != null) {
-              _initialChapterIndex = json['chapterIndex'] is int
-                  ? json['chapterIndex']
-                  : int.tryParse(json['chapterIndex'].toString());
-            }
-
-            if (json['cfi'] != null) {
-              _initialCfiPath = json['cfi'];
-            } else if (json['startPath'] != null) {
-              _initialCfiPath = json['startPath'];
-            }
-          } catch (e) {
-            print('Error parsing initial CFI JSON: $e');
-          }
-        } else {
-          // Legacy int parsing
-          _initialChapterIndex = int.tryParse(widget.initialCfi);
-        }
-      } catch (e) {
-        print('Error parsing initial CFI: $e');
-      }
-    }
-
+    _epubService = ref.read(epubServiceProvider);
     _loadBook();
   }
 
   Future<void> _loadBook() async {
-    print('ReaderScreen: _loadBook started');
     try {
-      await _epubService.loadBook(widget.book.filePath);
-      print('ReaderScreen: Book loaded in service');
-      final allChapters = await _epubService.getAllChapters();
-      print('ReaderScreen: Got ${allChapters.length} chapters');
-
-      setState(() {
-        _chapters = allChapters;
-        _spineGroups = _groupChaptersBySpine(_chapters);
-      });
-      print('ReaderScreen: Created ${_spineGroups.length} spine groups');
-
-      // Detect if this is a Project Gutenberg book
-      final metadata = _epubService.book?.Schema?.Package?.Metadata;
-      if (metadata != null) {
-        final publishers = metadata.Publishers?.join(' ') ?? '';
-        final rights = metadata.Rights?.join(' ') ?? '';
-        final description = metadata.Description ?? '';
-
-        if (publishers.contains('Project Gutenberg') ||
-            rights.contains('Project Gutenberg') ||
-            description.contains('Project Gutenberg')) {
-          _isGutenberg = true;
-          print('ReaderScreen: Detected Project Gutenberg book');
-        }
-      }
-
-      // Load settings
       final settingsRepo = ref.read(readerSettingsRepositoryProvider);
+      final bookRepo = ref.read(bookRepositoryProvider);
+
+      // Load Settings
       _theme = settingsRepo.getTheme();
       _scrollMode = settingsRepo.getScrollMode();
       _fontSize = settingsRepo.getFontSize();
       _fontFamily = settingsRepo.getFontFamily();
 
-      // Restore progress ONLY if we didn't pass an initial CFI (e.g. from a highlight)
-      if (widget.initialCfi.isEmpty) {
-        final progress = await ref
-            .read(bookRepositoryProvider)
-            .getReadingProgress(widget.book.id);
-        print('ReaderScreen: Progress restored: $progress');
+      // Parse Epub
+      final file = File(widget.book.filePath);
+      if (!await file.exists()) {
+        throw Exception("Book file not found at ${widget.book.filePath}");
+      }
 
-        if (progress != null) {
-          try {
-            final json = jsonDecode(progress);
-            _initialChapterIndex = json['chapterIndex'];
-            _initialCfiPath = json['cfi'];
-          } catch (e) {
-            print('Error parsing progress: $e');
+      await _epubService.loadBook(widget.book.filePath);
+      final epubBook = _epubService.book;
+
+      if (epubBook == null) {
+        throw Exception("Failed to parse EPUB");
+      }
+
+      // Detect Project Gutenberg
+      _isGutenberg =
+          (epubBook.Title?.contains('Project Gutenberg') ?? false) ||
+          (epubBook.Author?.contains('Project Gutenberg') ?? false);
+
+      // Flatten chapters
+      _chapters = await _epubService.getAllChapters();
+
+      // Group chapters
+      _spineGroups = _groupChaptersBySpine(epubBook, _chapters);
+
+      // Resolve initial location
+      int initialIndex = 0;
+      String initialCfi = '';
+
+      // Fetch progress from repository properly
+      final savedProgress = await bookRepo.getReadingProgress(widget.book.id);
+
+      if (savedProgress != null && savedProgress.isNotEmpty) {
+        final parts = savedProgress.split('|');
+        if (parts.isNotEmpty) {
+          initialIndex = int.tryParse(parts[0]) ?? 0;
+          if (parts.length > 1) {
+            initialCfi = parts[1];
           }
         }
-      } else {
-        print('ReaderScreen: Skipping progress restore, using initialCfi');
       }
 
-      // Determine initial spine index
-      // Determine initial chapter index
-      if (_initialChapterIndex != null &&
-          _initialChapterIndex! < _chapters.length) {
-        _currentChapterIndex = _initialChapterIndex!;
-        _activeChapterIndex = _initialChapterIndex!;
-      }
-      print('ReaderScreen: Initial chapter index: $_currentChapterIndex');
+      if (initialIndex >= _chapters.length) initialIndex = 0;
 
       setState(() {
+        _currentChapterIndex = initialIndex;
+        _currentProgressCfi = initialCfi;
         _isLoading = false;
       });
 
-      // Load the initial chapter
-      if (mounted) {
-        if (_webViewController != null) {
-          print(
-            'ReaderScreen: WebView ready, triggering _loadChapter($_currentChapterIndex)',
-          );
-          _loadChapter(_currentChapterIndex, initialCfi: _initialCfiPath);
-        } else {
-          print(
-            'ReaderScreen: WebView not ready, waiting for onWebViewCreated',
-          );
-        }
-      }
-    } catch (e, stack) {
-      print('Error loading book: $e');
-      print(stack);
+      // Note: Actual content loading happens in onWebViewCreated -> _loadChapter
+    } catch (e) {
+      print("Error loading book: $e");
       if (mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error loading book: $e')));
+        Navigator.pop(context);
       }
     }
   }
 
-  Future<void> _loadChapter(int index, {String initialCfi = ''}) async {
-    if (index < 0 || index >= _chapters.length) return;
-
-    if (_webViewController == null) {
-      return;
-    }
-
-    print(
-      "ReaderScreen: _loadChapter($index) called with initialCfi: '$initialCfi'",
-    );
-
-    // Find which spine group this chapter belongs to
-    int spineIndex = -1;
-    for (int i = 0; i < _spineGroups.length; i++) {
-      if (_spineGroups[i].contains(_chapters[index])) {
-        spineIndex = i;
-        break;
-      }
-    }
-
-    if (spineIndex == -1) {
-      print("Error: Could not find spine group for chapter $index");
-      return;
-    }
-
-    setState(() {
-      _currentChapterIndex = index;
-      _activeChapterIndex = index;
-    });
-
-    // Save progress (initial load)
-    _saveProgress(_activeChapterIndex, initialCfi);
-
-    // Load content of the spine item
-    // We use the first chapter in the group to get the file content, as they share the file
-    final content = await _epubService.getChapterContent(
-      _spineGroups[spineIndex].first,
-    );
-
-    if (content != null) {
-      // Determine anchors for slicing
-      final currentChapter = _chapters[index];
-      String? startAnchor = currentChapter.Anchor;
-      String? endAnchor;
-
-      // Check if there is a next chapter in the SAME spine group
-      final group = _spineGroups[spineIndex];
-      final indexInGroup = group.indexOf(currentChapter);
-      if (indexInGroup != -1 && indexInGroup < group.length - 1) {
-        endAnchor = group[indexInGroup + 1].Anchor;
-      }
-
-      // Prepare anchors for this spine item (for JS scroll/active detection if needed, though less relevant now)
-      final anchors = group.map((c) {
-        return {
-          'id': c.Anchor, // The ID in the HTML (e.g. "p1")
-          'chapterIndex': _chapters.indexOf(c),
-        };
-      }).toList();
-
-      // Refresh highlights
-      final highlights = await ref
-          .read(bookRepositoryProvider)
-          .getHighlights(widget.book.id);
-
-      setState(() {
-        _currentHighlights = highlights;
-      });
-
-      print(
-        "ReaderScreen: Loading chapter $index (Spine $spineIndex). Start: $startAnchor, End: $endAnchor",
-      );
-      await _webViewController?.loadData(
-        data: ReaderHtmlGenerator.generateHtml(
-          content,
-          theme: _theme,
-          fontSize: _fontSize,
-          fontFamily: _fontFamily,
-          scrollMode: _scrollMode,
-          currentChapterIndex: _currentChapterIndex,
-          initialProgress: initialCfi,
-          highlights: _currentHighlights,
-          spineIndex: spineIndex,
-          anchors: anchors,
-          scrollToAnchor:
-              null, // We slice, so we start at top usually (unless CFI)
-          startAnchor: startAnchor,
-          endAnchor: endAnchor,
-          isGutenberg: _isGutenberg,
-        ),
-      );
-    }
-  }
-
-  Future<void> _saveProgress(int chapterIndex, String cfi) async {
-    final progressJson = jsonEncode({
-      'chapterIndex': chapterIndex,
-      'cfi': cfi,
-      'timestamp': DateTime.now().millisecondsSinceEpoch,
-    });
-    await ref
-        .read(bookRepositoryProvider)
-        .saveReadingProgress(widget.book.id, progressJson);
-  }
-
-  // Helper to group chapters by their source file (spine item)
-  // This is crucial because EPUBs often split one file into multiple "chapters" (anchors)
-  List<List<EpubChapterRef>> _groupChaptersBySpine(
-    List<EpubChapterRef> chapters,
+  List<List<epub.EpubChapterRef>> _groupChaptersBySpine(
+    epub.EpubBookRef book,
+    List<epub.EpubChapterRef> chapters,
   ) {
-    List<List<EpubChapterRef>> groups = [];
+    List<List<epub.EpubChapterRef>> groups = [];
     if (chapters.isEmpty) return groups;
 
+    List<epub.EpubChapterRef> currentGroup = [];
     String? currentFileName;
-    List<EpubChapterRef> currentGroup = [];
 
     for (var chapter in chapters) {
-      if (chapter.ContentFileName != currentFileName) {
+      if (currentFileName == null) {
+        currentFileName = chapter.ContentFileName;
+        currentGroup.add(chapter);
+      } else if (chapter.ContentFileName != currentFileName) {
         if (currentGroup.isNotEmpty) {
           groups.add(currentGroup);
         }
@@ -318,25 +158,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     if (currentGroup.isNotEmpty) {
       groups.add(currentGroup);
     }
-
-    print(
-      "ReaderScreen: Grouped ${chapters.length} chapters into ${groups.length} spine items",
-    );
-    for (var i = 0; i < groups.length; i++) {
-      print(
-        "Spine Group $i: ${groups[i].length} chapters. File: ${groups[i].first.ContentFileName}",
-      );
-    }
-
     return groups;
   }
 
   void _toggleControls() {
-    if (_isSettingsOpen) return;
-    print("Toggling controls. Current state: $_showControls");
     setState(() {
       _showControls = !_showControls;
     });
+    // Lock JS interactions if controls are visible
+    _webViewController?.evaluateJavascript(
+      source:
+          "if (window.setInteractionLocked) setInteractionLocked($_showControls);",
+    );
   }
 
   void _updateWebViewSettings() {
@@ -346,12 +179,108 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         supportZoom: false,
         horizontalScrollBarEnabled: false,
         verticalScrollBarEnabled: false,
-        // Disable native paging to allow JS snapping to work
+        // Disable native paging, we handle it with JS
         isPagingEnabled: false,
-        // Attempt to suppress default context menu
         disableContextMenu: true,
+        // Ensure content mode fits formatting
+        pageZoom: 1.0,
       ),
     );
+  }
+
+  Future<void> _loadChapter(int index, {String? initialCfiOverride}) async {
+    if (index < 0 || index >= _chapters.length) return;
+
+    // Logic: Use override if provided.
+    // Else if index == _currentChapterIndex, use _currentProgressCfi.
+    // Else start at top.
+    final targetCfi =
+        initialCfiOverride ??
+        (index == _currentChapterIndex ? _currentProgressCfi : '');
+
+    setState(() {
+      _currentChapterIndex = index;
+    });
+
+    try {
+      final chapter = _chapters[index];
+
+      // Find spine group
+      int spineIndex = -1;
+      for (int i = 0; i < _spineGroups.length; i++) {
+        if (_spineGroups[i].contains(chapter)) {
+          spineIndex = i;
+          break;
+        }
+      }
+
+      if (spineIndex == -1) return;
+
+      // Get content
+      final content = await _epubService.getChapterContent(
+        _spineGroups[spineIndex].first,
+      );
+
+      if (content != null) {
+        String? startAnchor = chapter.Anchor;
+        String? endAnchor;
+
+        final group = _spineGroups[spineIndex];
+        final indexInGroup = group.indexOf(chapter);
+
+        if (indexInGroup != -1 && indexInGroup < group.length - 1) {
+          endAnchor = group[indexInGroup + 1].Anchor;
+        }
+
+        // Generate HTML
+        final html = ReaderHtmlGenerator.generateHtml(
+          content,
+          theme: _theme,
+          fontSize: _fontSize,
+          fontFamily: _fontFamily,
+          scrollMode: _scrollMode,
+          currentChapterIndex: index,
+          initialProgress: targetCfi,
+          highlights: [],
+          spineIndex: spineIndex,
+          anchors: [],
+          scrollToAnchor: startAnchor,
+          startAnchor: startAnchor,
+          endAnchor: endAnchor,
+          isGutenberg: _isGutenberg,
+          isInteractionLocked: _showControls, // Maintain lock state
+        );
+
+        _updateWebViewSettings();
+        await _webViewController?.loadData(data: html);
+
+        // We do typically save simplified progress here, but real progress comes from scroll
+        _saveProgress(index, targetCfi);
+      }
+    } catch (e) {
+      print("Error loading chapter: $e");
+    }
+  }
+
+  void _saveProgress(int chapterIndex, [String cfi = '']) {
+    // Save both chapter index and detailed CFI
+    ref
+        .read(bookRepositoryProvider)
+        .saveReadingProgress(widget.book.id, "$chapterIndex|$cfi");
+  }
+
+  void _onNextChapter() {
+    if (_currentChapterIndex < _chapters.length - 1) {
+      _currentProgressCfi = ''; // Reset for new chapter
+      _loadChapter(_currentChapterIndex + 1);
+    }
+  }
+
+  void _onPrevChapter() {
+    if (_currentChapterIndex > 0) {
+      _currentProgressCfi = ''; // Reset for new chapter
+      _loadChapter(_currentChapterIndex - 1, initialCfiOverride: 'END');
+    }
   }
 
   Color _getScaffoldColor() {
@@ -370,14 +299,14 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       case ReaderTheme.light:
         return Colors.black;
       case ReaderTheme.dark:
-        return Colors.white;
+        return const Color(0xFFE0E0E0);
       case ReaderTheme.sepia:
         return const Color(0xFF5B4636);
     }
   }
 
   String _colorToHex(Color color) {
-    return '#${color.value.toRadixString(16).padLeft(8, '0').substring(2)}';
+    return '#${color.value.toRadixString(16).substring(2)}';
   }
 
   @override
@@ -388,210 +317,146 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     final scaffoldColor = _getScaffoldColor();
     final textColor = _getTextColor();
-
     return Scaffold(
       key: _scaffoldKey,
       backgroundColor: scaffoldColor,
-      // appBar and bottomNavigationBar removed to allow overlay
       drawer: ReaderDrawer(
         bookTitle: widget.book.title,
         chapters: _chapters,
-        activeChapterIndex: _activeChapterIndex,
+        activeChapterIndex: _currentChapterIndex,
         backgroundColor: scaffoldColor,
         textColor: textColor,
         activeColor: Theme.of(context).primaryColor,
         onChapterSelected: (index) {
-          if (index >= 0 && index < _chapters.length) {
-            _loadChapter(index);
-          }
+          Navigator.pop(context); // Close drawer
+          _loadChapter(index);
         },
       ),
-      bottomNavigationBar: null, // Removed
       body: Stack(
         children: [
           // WebView
-          SafeArea(
-            child: InAppWebView(
-              initialSettings: InAppWebViewSettings(
-                transparentBackground: true,
-                supportZoom: false,
-                horizontalScrollBarEnabled: false,
-                verticalScrollBarEnabled: false,
-                isPagingEnabled: false,
-                disableContextMenu: true,
-              ),
-              initialData: InAppWebViewInitialData(
-                data: '''
-                  <!DOCTYPE html>
-                  <html>
-                  <head>
-                    <style>
-                      body { 
-                        display: flex; 
-                        justify-content: center; 
-                        align-items: center; 
-                        height: 100vh; 
-                        margin: 0; 
-                        font-family: sans-serif; 
-                        color: #888;
-                      }
-                    </style>
-                  </head>
-                  <body>
-                    Loading...
-                  </body>
-                  </html>
-                ''',
-              ),
-              onWebViewCreated: (controller) {
-                _webViewController = controller;
-                print("ReaderScreen: onWebViewCreated");
-
-                // If book is already loaded, trigger spine load
-                if (_chapters.isNotEmpty) {
-                  print(
-                    "ReaderScreen: Book already loaded, triggering _loadChapter($_currentChapterIndex)",
-                  );
-                  _loadChapter(
-                    _currentChapterIndex,
-                    initialCfi: _initialCfiPath,
-                  );
-                } else {
-                  print("ReaderScreen: Book not yet loaded, waiting...");
-                }
-
-                // Scroll Handlers
-                controller.addJavaScriptHandler(
-                  handlerName: 'onNextChapter',
-                  callback: (args) {
-                    print("ReaderScreen: onNextChapter triggered from JS");
-                    if (_currentChapterIndex < _chapters.length - 1) {
-                      _loadChapter(_currentChapterIndex + 1);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                            'You have reached the end of the book.',
-                          ),
-                        ),
-                      );
-                    }
-                  },
-                );
-
-                controller.addJavaScriptHandler(
-                  handlerName: 'onActiveChapterChanged',
-                  callback: (args) {
-                    if (args.isNotEmpty && args[0] != null) {
-                      setState(() {
-                        _activeChapterIndex = args[0] as int;
-                        _currentChapterIndex = _activeChapterIndex;
-                      });
-                      _saveProgress(_activeChapterIndex, '');
-                    }
-                  },
-                );
-
-                controller.addJavaScriptHandler(
-                  handlerName: 'onScrollProgress',
-                  callback: (args) {
-                    if (args.isNotEmpty) {
-                      final String path = args[0].toString();
-                      _saveProgress(_activeChapterIndex, path);
-                    }
-                  },
-                );
-
-                controller.addJavaScriptHandler(
-                  handlerName: 'onTap',
-                  callback: (args) {
-                    _toggleControls();
-                  },
-                );
-
-                controller.addJavaScriptHandler(
-                  handlerName: 'onMenuAction',
-                  callback: (args) {
-                    if (args.length >= 3) {
-                      final action = args[0] as String;
-                      final cfi = args[1] as String;
-                      final text = args[2] as String;
-                      _handleMenuAction(action, cfi, text);
-                    }
-                  },
-                );
-
-                controller.addJavaScriptHandler(
-                  handlerName: 'onHighlightClick',
-                  callback: (args) {
-                    if (args.isNotEmpty) {
-                      final id = args[0] as String;
-                      _showHighlightOptions(context, id);
-                    }
-                  },
-                );
-              },
-              onConsoleMessage: (controller, consoleMessage) {
-                print("JS Console: ${consoleMessage.message}");
-              },
-              onLoadStop: (controller, url) async {
-                print("ReaderScreen: onLoadStop");
-              },
-            ),
-          ),
-
-          if (_isLoading)
-            Container(
-              color: scaffoldColor,
-              child: const Center(child: CircularProgressIndicator()),
-            ),
-
-          // Top Bar (Overlay)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: ReaderTopBar(
-              showControls: _showControls,
-              backgroundColor: scaffoldColor,
-              textColor: textColor,
-              onExit: () {
-                Navigator.pop(context);
-              },
-              onTOC: () {
-                _scaffoldKey.currentState?.openDrawer();
-              },
-              onSettings: () => _showSettingsModal(context),
-            ),
-          ),
-
-          // Bottom Bar (Overlay)
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
+          Positioned.fill(
             child: SafeArea(
-              top: false,
+              child: InAppWebView(
+                key: ValueKey(
+                  _scrollMode,
+                ), // Force rebuild when mode changes to apply paging settings
+                initialSettings: InAppWebViewSettings(
+                  transparentBackground: true,
+                  supportZoom: false,
+                  horizontalScrollBarEnabled: false,
+                  verticalScrollBarEnabled: false,
+                  isPagingEnabled:
+                      false, // Disable native paging, we handle it with JS
+                  disableContextMenu: true,
+                  pageZoom: 1.0,
+                ),
+                onWebViewCreated: (controller) {
+                  _webViewController = controller;
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onTap',
+                    callback: (_) => _toggleControls(),
+                  );
+
+                  // Progress Handler (Granular)
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onScrollProgress',
+                    callback: (args) {
+                      if (args.isNotEmpty) {
+                        final cfi = args[0].toString();
+                        // Only update if changed to avoid spam
+                        if (cfi != _currentProgressCfi) {
+                          _currentProgressCfi = cfi; // Update local state
+                          _saveProgress(_currentChapterIndex, cfi);
+                        }
+                      }
+                    },
+                  );
+
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onNearEnd',
+                    callback: (args) {
+                      // Potential pre-loading trigger or end-of-chapter hint
+                    },
+                  );
+
+                  // Handle Chapter Navigation from JS (e.g. click next button or swipe past end)
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onNextChapter',
+                    callback: (args) => _onNextChapter(),
+                  );
+
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onPrevChapter',
+                    callback: (args) => _onPrevChapter(),
+                  );
+
+                  controller.addJavaScriptHandler(
+                    handlerName: 'consoleLog',
+                    callback: (args) {
+                      print("JS_LOG: ${args.join(' ')}");
+                    },
+                  );
+
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onMenuAction',
+                    callback: (args) {
+                      if (args.length >= 3) {
+                        _handleMenuAction(
+                          args[0].toString(),
+                          args[1].toString(),
+                          args[2].toString(),
+                        );
+                      }
+                    },
+                  );
+                  _loadChapter(_currentChapterIndex);
+                },
+              ),
+            ),
+          ),
+
+          // Controls
+          if (_showControls) ...[
+            // Top Bar
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: ReaderTopBar(
+                showControls: _showControls,
+                onExit: () => Navigator.of(context).pop(),
+                onTOC: () => _scaffoldKey.currentState?.openDrawer(),
+                onSettings: () {
+                  _showSettingsModal(context);
+                },
+                backgroundColor: scaffoldColor,
+                textColor: textColor,
+              ),
+            ),
+
+            // Bottom Nav
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
               child: ReaderNavigationBar(
                 showControls: _showControls,
                 backgroundColor: scaffoldColor,
                 textColor: textColor,
-                previousChapterTitle:
-                    _chapters.isNotEmpty && _currentChapterIndex > 0
-                    ? _chapters[_currentChapterIndex - 1].Title ?? ''
-                    : '',
-                nextChapterTitle:
-                    _chapters.isNotEmpty &&
-                        _currentChapterIndex < _chapters.length - 1
-                    ? _chapters[_currentChapterIndex + 1].Title ?? ''
-                    : '',
+                onPrevious: _onPrevChapter,
+                onNext: _onNextChapter,
                 canGoPrevious: _currentChapterIndex > 0,
                 canGoNext: _currentChapterIndex < _chapters.length - 1,
-                onPrevious: () => _loadChapter(_currentChapterIndex - 1),
-                onNext: () => _loadChapter(_currentChapterIndex + 1),
+                previousChapterTitle: _currentChapterIndex > 0
+                    ? (_chapters[_currentChapterIndex - 1].Title ?? 'Previous')
+                    : '',
+                nextChapterTitle: _currentChapterIndex < _chapters.length - 1
+                    ? (_chapters[_currentChapterIndex + 1].Title ?? 'Next')
+                    : '',
               ),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -623,11 +488,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
+  // Helper method now available
   Future<String?> _createHighlight(String text, String cfi) async {
     try {
       // Create highlight JSON
       final Map<String, dynamic> cfiJson = jsonDecode(cfi);
-      cfiJson['chapterIndex'] = _activeChapterIndex;
+      cfiJson['chapterIndex'] = _currentChapterIndex; // Fixed variable name
+
       if (!cfiJson.containsKey('text')) {
         cfiJson['text'] = text;
       }
@@ -647,17 +514,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       );
 
       // Add to local list so it persists in this session without reload
-      setState(() {
-        _currentHighlights.add(
-          Quote(
-            id: id,
-            textContent: text,
-            bookId: widget.book.id,
-            cfi: finalCfiString,
-            createdAt: DateTime.now(),
-          ),
-        );
-      });
+      // setState(() {
+      //   _currentHighlights.add(...)
+      // });
 
       return id;
     } catch (e) {
@@ -682,10 +541,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     );
   }
 
+  void _toggleInputBlocking(bool blocked) {
+    _webViewController?.evaluateJavascript(
+      source: "setInputBlocked($blocked); null;",
+    );
+  }
+
   void _showSettingsModal(BuildContext context) async {
-    setState(() {
-      _isSettingsOpen = true;
-    });
+    // JS Blocking (The "Real" Fix)
+    _toggleInputBlocking(true);
+
     await showModalBottomSheet(
       context: context,
       builder: (context) => ReaderSettingsModal(
@@ -693,7 +558,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         scrollMode: _scrollMode,
         fontSize: _fontSize,
         fontFamily: _fontFamily,
-        activeChapterIndex: _activeChapterIndex,
+        activeChapterIndex: _currentChapterIndex,
         totalChapters: _chapters.length,
         onThemeChanged: (theme) {
           setState(() {
@@ -702,17 +567,44 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           ref.read(readerSettingsRepositoryProvider).setTheme(theme);
 
           final textColor = _colorToHex(_getTextColor());
+          final bgColor = _colorToHex(_getScaffoldColor());
           _webViewController?.evaluateJavascript(
-            source: "setTheme('$textColor'); null;",
+            source: "setTheme('$textColor', '$bgColor'); null;",
           );
         },
-        onScrollModeChanged: (mode) {
+        onScrollModeChanged: (mode) async {
+          // Attempt to capture current progress before switch
+          try {
+            final result = await _webViewController?.evaluateJavascript(
+              source:
+                  "window.getCurrentLocationPath ? window.getCurrentLocationPath() : null;",
+            );
+            print("DEBUG: Mode Switch Capture Result: $result");
+            if (result != null &&
+                result.toString().isNotEmpty &&
+                result.toString() != 'null') {
+              _currentProgressCfi = result.toString();
+              _saveProgress(_currentChapterIndex, _currentProgressCfi);
+              print("DEBUG: Saved CFI for switch: $_currentProgressCfi");
+            } else {
+              print("DEBUG: Capture failed or empty. Result: $result");
+            }
+          } catch (e) {
+            print("Error capturing progress: $e");
+          }
+
           setState(() {
             _scrollMode = mode;
           });
           ref.read(readerSettingsRepositoryProvider).setScrollMode(mode);
-          _updateWebViewSettings();
-          _loadChapter(_currentChapterIndex);
+          _updateWebViewSettings(); // Ensure WebView settings (paging) are updated
+          print(
+            "DEBUG: calling _loadChapter with override: $_currentProgressCfi",
+          );
+          _loadChapter(
+            _currentChapterIndex,
+            initialCfiOverride: _currentProgressCfi,
+          ); // Reload to apply CSS changes
         },
         onFontSizeChanged: (size) {
           _updateFontSize(size);
@@ -722,15 +614,16 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
             _fontFamily = family;
           });
           ref.read(readerSettingsRepositoryProvider).setFontFamily(family);
+          // Use helper function which sets !important
           _webViewController?.evaluateJavascript(
             source: "setFontFamily('$family'); null;",
           );
         },
       ),
     );
-    setState(() {
-      _isSettingsOpen = false;
-    });
+
+    // Unblock JS
+    _toggleInputBlocking(false);
   }
 
   void _showHighlightOptions(BuildContext context, String highlightId) {
@@ -763,7 +656,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                   source: "removeHighlight('$highlightId'); null;",
                 );
                 setState(() {
-                  _currentHighlights.removeWhere((h) => h.id == highlightId);
+                  // _currentHighlights.removeWhere((h) => h.id == highlightId);
                 });
               },
             ),

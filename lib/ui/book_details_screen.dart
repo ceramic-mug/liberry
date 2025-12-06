@@ -139,18 +139,14 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                               }
                             }
 
-                            final cfi = await bookRepo.getReadingProgress(
-                              book.id,
-                            );
+                            // Validated file existence
 
                             if (context.mounted) {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => ReaderScreen(
-                                    book: book,
-                                    initialCfi: cfi ?? '',
-                                  ),
+                                  builder: (context) =>
+                                      ReaderScreen(book: book),
                                 ),
                               );
                             }
@@ -339,10 +335,7 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => ReaderScreen(
-                          book: book,
-                          initialCfi: highlight.cfi ?? '',
-                        ),
+                        builder: (context) => ReaderScreen(book: book),
                       ),
                     );
                   },

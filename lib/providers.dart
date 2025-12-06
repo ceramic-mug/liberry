@@ -6,6 +6,7 @@ import 'data/character_repository.dart';
 import 'data/remote/opds_service.dart';
 import 'data/remote/gutendex_service.dart';
 import 'data/download_manager.dart';
+import 'services/epub_service.dart';
 
 final databaseProvider = Provider<AppDatabase>((ref) {
   return AppDatabase();
@@ -36,4 +37,8 @@ final downloadManagerProvider = Provider<DownloadManager>((ref) {
     ref.read(dioProvider),
     ref.read(bookRepositoryProvider),
   );
+});
+
+final epubServiceProvider = Provider<EpubService>((ref) {
+  return EpubService();
 });

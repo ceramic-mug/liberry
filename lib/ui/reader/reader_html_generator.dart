@@ -5,6 +5,63 @@ import 'package:html/parser.dart' as html_parser;
 import 'package:html/dom.dart' as dom;
 
 class ReaderHtmlGenerator {
+  /// Process raw chapter content (sanitization, pruning, Gutenberg fixes)
+  /// Returns the HTML body content ready for injection.
+  static String processChapterContent(
+    String content, {
+    String? startAnchor,
+    String? endAnchor,
+    bool isGutenberg = false,
+  }) {
+    // FIX: Project Gutenberg and other XHTML epubs often use self-closing divs.
+    String processedContent = content.replaceAllMapped(
+      RegExp(r'''<div([^>]*)/>'''),
+      (match) => '<div${match.group(1)}></div>',
+    );
+
+    // Fallback detection
+    final bool effectiveIsGutenberg =
+        isGutenberg ||
+        content.contains('Project Gutenberg') ||
+        content.contains('www.gutenberg.org') ||
+        content.contains('Ebookmaker') ||
+        content.contains('pgepub.css') ||
+        content.contains('pgmonospaced') ||
+        content.contains('x-ebookmaker');
+
+    // Prune content if anchors are provided
+    if (startAnchor != null || endAnchor != null) {
+      processedContent = _pruneHtml(processedContent, startAnchor, endAnchor);
+    }
+
+    if (effectiveIsGutenberg) {
+      // Aggressive sanitization for Project Gutenberg
+      processedContent = processedContent.replaceAll(
+        RegExp(
+          r'''<link[^>]*rel=['"]?stylesheet['"]?[^>]*>''',
+          caseSensitive: false,
+        ),
+        '',
+      );
+      processedContent = processedContent.replaceAll(
+        RegExp(r'''\sstyle=['"][^'"]*['"]''', caseSensitive: false),
+        '',
+      );
+      processedContent = processedContent.replaceAll(
+        RegExp(r'''\sclass=['"][^'"]*['"]''', caseSensitive: false),
+        '',
+      );
+      processedContent = processedContent.replaceAll(
+        RegExp(r'''<p>\s*(?:<br\s*/?>\s*)+\s*</p>''', caseSensitive: false),
+        '',
+      );
+    }
+
+    // Ensure we only return the body content (inner HTML)
+    // This allows the caller to wrap it in a container without creating invalid nested HTML structures
+    return extractBody(processedContent);
+  }
+
   static String generateHtml(
     String content, {
     required ReaderTheme theme,
@@ -20,84 +77,14 @@ class ReaderHtmlGenerator {
     String? startAnchor,
     String? endAnchor,
     bool isGutenberg = false,
+    bool isInteractionLocked = false,
   }) {
-    // FIX: Project Gutenberg and other XHTML epubs often use self-closing divs (e.g. <div class="pgmonospaced"/>).
-    // In HTML5 parsers (WebView and html package), these are treated as opening tags <div>, causing the rest of the document
-    // to be nested inside them. This inherits unwanted styles (like monospace) and breaks layout.
-    // We replace <div ... /> with <div ...></div> BEFORE any parsing happens.
-    String processedContent = content.replaceAllMapped(
-      RegExp(r'<div([^>]*)/>'),
-      (match) => '<div${match.group(1)}></div>',
+    String processedContent = processChapterContent(
+      content,
+      startAnchor: startAnchor,
+      endAnchor: endAnchor,
+      isGutenberg: isGutenberg,
     );
-
-    // Fallback detection: check raw content for Gutenberg indicators
-    // We check this early to ensure we catch it even if metadata is missing
-    final bool hasPG = content.contains('Project Gutenberg');
-    final bool hasUrl = content.contains('www.gutenberg.org');
-    final bool hasMaker = content.contains('Ebookmaker');
-    final bool hasCss = content.contains('pgepub.css');
-    final bool hasMonoClass = content.contains('pgmonospaced');
-    final bool hasMakerClass = content.contains('x-ebookmaker');
-
-    final bool effectiveIsGutenberg =
-        isGutenberg ||
-        hasPG ||
-        hasUrl ||
-        hasMaker ||
-        hasCss ||
-        hasMonoClass ||
-        hasMakerClass;
-
-    // Prune content if anchors are provided
-    if (startAnchor != null || endAnchor != null) {
-      processedContent = _pruneHtml(processedContent, startAnchor, endAnchor);
-    }
-
-    if (effectiveIsGutenberg) {
-      // Aggressive sanitization for Project Gutenberg books to ensure full control of formatting
-      // 1. Remove all external stylesheets
-      processedContent = processedContent.replaceAll(
-        RegExp(
-          r'<link[^>]*rel=["'
-          ']?stylesheet["'
-          ']?[^>]*>',
-          caseSensitive: false,
-        ),
-        '',
-      );
-      // 2. Remove all inline style attributes
-      processedContent = processedContent.replaceAll(
-        RegExp(
-          r'\sstyle=["'
-          '][^"'
-          ']*["'
-          ']',
-          caseSensitive: false,
-        ),
-        '',
-      );
-      // 3. Remove class attributes
-      processedContent = processedContent.replaceAll(
-        RegExp(
-          r'\sclass=["'
-          '][^"'
-          ']*["'
-          ']',
-          caseSensitive: false,
-        ),
-        '',
-      );
-
-      // 4. Remove empty paragraphs that just contain breaks (fixes excessive spacing)
-      processedContent = processedContent.replaceAll(
-        RegExp(r'<p>\s*(?:<br\s*/?>\s*)+\s*</p>', caseSensitive: false),
-        '',
-      );
-    } else {
-      // For non-Gutenberg books, we still might want to remove specific problematic classes if identified,
-      // but for now we leave them as is, or apply the specific fix if needed.
-      // The self-closing div fix above handles the structural issue.
-    }
 
     String bgColor;
     String textColor;
@@ -117,38 +104,58 @@ class ReaderHtmlGenerator {
         break;
     }
 
-    // Horizontal Mode CSS (Strict Pagination)
+    // Horizontal Mode CSS (Strict Pagination via JS)
     String scrollCss = '';
     if (scrollMode == ReaderScrollMode.horizontal) {
       scrollCss = '''
         html, body {
+          height: 100%;
+          width: 100%;
+          margin: 0;
+          padding: 0;
+          overflow: hidden; /* Strict lock on window */
+        }
+        #reader-content {
+          /* The Scroll Container */
           height: 100vh;
           width: 100vw;
-          margin: 0 !important;
-          padding: 0 !important;
-          overflow-y: hidden;
-          overflow-x: scroll;
-        }
-        body {
+          overflow: hidden; /* Programmatic scroll only */
+          
+          /* CSS Columns */
           column-width: 100vw;
           column-gap: 0;
           column-fill: auto;
-          height: 100vh;
-          /* No padding on body to ensure perfect 100vw columns */
+          
+          margin: 0;
+          padding: 40px 0;
+          box-sizing: border-box;
         }
+        
+        /* Hide Scrollbars */
+        ::-webkit-scrollbar {
+            display: none;
+        }
+        
+        .chapter-container {
+            break-before: always;
+        }
+
         /* Add padding to content elements for reading comfort */
         p, h1, h2, h3, h4, h5, h6, li, div {
           padding-left: 20px;
           padding-right: 20px;
           box-sizing: border-box;
         }
+        
         img {
-          max-height: 90vh;
-          max-width: 100%;
+          max-height: 90vh; /* Leave room for margins */
+          max-width: calc(100vw - 40px);
           width: auto;
           height: auto;
           margin: 0 auto;
           display: block;
+          object-fit: contain;
+          break-inside: avoid;
         }
       ''';
     } else {
@@ -168,6 +175,14 @@ class ReaderHtmlGenerator {
       ''';
     }
 
+    // ... (Highlights setup same) ...
+
+    // ... (Arrow HTML same) ...
+
+    // ... (inject CSS string ... same)
+
+    // ... (Rest of HTML wrapping) ...
+
     // Prepare highlights JSON with ID, filtering by current chapter
     final highlightsJson = jsonEncode(
       highlights
@@ -175,8 +190,6 @@ class ReaderHtmlGenerator {
             if (h.cfi == null) return false;
             try {
               final Map<String, dynamic> cfiMap = jsonDecode(h.cfi!);
-              // Check if the highlight belongs to this chapter
-              // We use loose equality or int parsing to be safe
               final int? highlightChapterIndex = cfiMap['chapterIndex'] is int
                   ? cfiMap['chapterIndex']
                   : int.tryParse(cfiMap['chapterIndex'].toString());
@@ -196,12 +209,12 @@ class ReaderHtmlGenerator {
           .toList(),
     );
 
-    // Serialize anchors for JS
+    // Serialize anchors for user interactions
     final anchorsJson = jsonEncode(anchors);
 
-    // Arrow HTML
+    // Arrow HTML - Only relevant for vertical or end of book, usually handled by native UI in horizontal but we keep it
     const arrowHtml = '''
-      <div id="next-chapter-btn" onclick="window.flutter_inappwebview.callHandler('onNextChapter')" class="next-chapter-button" style="margin-top: auto; padding: 40px 0; text-align: center; cursor: pointer; opacity: 0.5; transition: opacity 0.3s;">
+      <div id="next-chapter-btn" onclick="window.flutter_inappwebview.callHandler('onNextChapter')" class="next-chapter-button" style="margin-top: auto; padding: 40px 0; text-align: center; cursor: pointer; opacity: 0.5; transition: opacity 0.3s; break-inside: avoid;">
          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
            <path d="M7 13l5 5 5-5M7 6l5 5 5-5"/>
          </svg>
@@ -221,10 +234,6 @@ class ReaderHtmlGenerator {
         }
         body {
           background-color: transparent !important;
-          console.log("JS STARTING - Spine Index: " + currentSpineIndex);
-        console.log("JS Font Size: ${fontSize}%");
-        console.log("JS Highlights Count: ${highlights.length}");
-        console.log("JS Initial Progress: '" + initialProgress + "'");
           color: $textColor !important;
           font-size: ${fontSize}% ;
           font-family: $fontFamily !important;
@@ -234,27 +243,39 @@ class ReaderHtmlGenerator {
           -webkit-user-select: text !important; /* Allow selection */
           user-select: text !important;
           -webkit-text-size-adjust: 100%;
-          width: 100%;
+          /* width: 100%;  <-- specific width handled inscrollCss */
           
-          /* Flexbox for sticky footer behavior */
+          /* Flexbox for sticky footer behavior in Vert, Block in Horiz */
           min-height: 100%;
-          display: flex;
-          flex-direction: column;
+          ${scrollMode == ReaderScrollMode.vertical ? 'display: flex; flex-direction: column;' : 'display: block;'}
         }
         $scrollCss
+        
+        /* Selection Styles */
+        ::selection {
+            background-color: ${theme == ReaderTheme.dark ? 'rgba(64, 196, 255, 0.5)' : 'rgba(33, 150, 243, 0.3)'};
+            color: inherit;
+        }
         /* Suppress on all elements */
         * {
           -webkit-touch-callout: none !important;
         }
         
         /* Force global font settings to override ANY book defaults */
-        /* We target 'body *' so we don't override the body's own settings (which we set above) */
         body * {
             font-family: inherit !important;
             font-size: inherit !important;
             line-height: inherit !important;
             max-width: 100% !important;
             box-sizing: border-box !important;
+        }
+        
+        body {
+            opacity: 1;
+            transition: opacity 0.2s ease-in;
+        }
+        body.loading {
+            opacity: 0;
         }
 
         /* Specific formatting for text blocks */
@@ -266,7 +287,6 @@ class ReaderHtmlGenerator {
         }
         
         pre {
-            /* font-family: monospace !important;  <-- Removed to allow user font preference */
             white-space: pre-wrap !important;
         }
         
@@ -285,10 +305,16 @@ class ReaderHtmlGenerator {
             display: none;
             grid-template-columns: 1fr 1fr;
             gap: 1px;
-            z-index: 1000;
+            z-index: 100000 !important; /* Extremely high to beat any content */
+            pointer-events: auto !important; /* Ensure it captures clicks */
             box-shadow: 0 4px 12px rgba(0,0,0,0.3);
             width: 240px; /* Wider for "Character" */
             overflow: hidden; /* Ensure rounded corners clip children */
+            
+            /* Reset typography to prevent inheriting book settings */
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+            font-size: 14px !important; 
+            line-height: normal !important;
         }
         .menu-item {
             color: white;
@@ -304,6 +330,10 @@ class ReaderHtmlGenerator {
         .menu-item:hover {
             background-color: #444;
         }
+        .menu-item span, .menu-item div {
+             font-size: 14px !important;
+             line-height: normal !important;
+        }
         .menu-icon {
             margin-right: 8px;
             display: flex;
@@ -312,16 +342,16 @@ class ReaderHtmlGenerator {
             justify-content: center;
         }
         .highlight {
-            background-color: ${theme == ReaderTheme.dark ? '#fdd835' : '#ffeb3b'};
+            background-color: ${theme == ReaderTheme.dark ? 'rgba(253, 216, 53, 0.5)' : 'rgba(255, 235, 59, 0.5)'};
             cursor: pointer;
-            mix-blend-mode: ${theme == ReaderTheme.dark ? 'difference' : 'multiply'};
-            color: ${theme == ReaderTheme.dark ? 'black' : 'inherit'}; /* Ensure text is readable in difference mode */
+            /* mix-blend-mode removed to ensure visibility on transparent backgrounds */
+            color: inherit;
         }
       </style>
       <script type="text/javascript">
       /* <![CDATA[ */
         // Injected Data
-        const currentSpineIndex = $spineIndex;
+        let currentSpineIndex = $spineIndex;
         const chapterAnchors = $anchorsJson; // [{id: 'p1', chapterIndex: 5}, ...]
         const initialScrollAnchor = ${jsonEncode(scrollToAnchor)};
         const initialProgress = ${jsonEncode(initialProgress)};
@@ -331,37 +361,124 @@ class ReaderHtmlGenerator {
         };
 
         console.log("JS STARTING - Spine Index: " + currentSpineIndex);
+        var interactionLocked = false;
+        var inputBlocked = false; // New global to completely block input
+
+        window.setInteractionLocked = function(locked) {
+            interactionLocked = locked;
+            console.log("Interaction Locked: " + locked);
+        }
+        
+        window.setInputBlocked = function(blocked) {
+            inputBlocked = blocked;
+            console.log("Input Blocked: " + blocked);
+        }
+
+        window.setTheme = function(textColor, bgColor) {
+            console.log("Setting Theme: Text=" + textColor + " Bg=" + bgColor);
+            document.body.style.setProperty('color', textColor, 'important');
+            if (bgColor) {
+                 document.body.style.setProperty('background-color', bgColor, 'important');
+                 // Also attempt to override html background if needed
+                 document.documentElement.style.setProperty('background-color', bgColor, 'important');
+            }
+        };
+        
+        window.setFontFamily = function(family) {
+            console.log("Setting Font Family: " + family);
+            document.body.style.setProperty('font-family', family, 'important');
+        };
+      </script>
+      <script>
+        // Polyfill console.log to send to Flutter
+        var oldLog = console.log;
+        console.log = function(message) {
+            if (window.flutter_inappwebview) {
+                window.flutter_inappwebview.callHandler('consoleLog', message);
+            }
+            oldLog.apply(console, arguments);
+        };
 
         function getPathTo(element) {
-            if (element === document.body) return "";
+            // Text Node?
+            if (element.nodeType === 3) {
+                 // Proceed to logic below which handles index among siblings
+            } else if (element.nodeType === 1 && element.id && element.id !== '') {
+                 return '//*[@id="' + element.id + '"]';
+            }
+            
+            if (element === document.body) return element.tagName;
             if (!element.parentNode) return "";
+            
             var siblings = element.parentNode.childNodes;
+            var ix = 0;
             for (var i = 0; i < siblings.length; i++) {
                 var sibling = siblings[i];
                 if (sibling === element) {
                     var parentPath = getPathTo(element.parentNode);
-                    return parentPath === "" ? "" + i : parentPath + "/" + i;
+                    return parentPath === "/" ? "" + ix : parentPath + "/" + ix;
                 }
+                if (sibling.nodeType === 1 || sibling.nodeType === 3) ix++; // Only count element and text nodes
             }
             return null;
         }
 
         function getNodeByPath(path) {
-            if (!path || path === "") return document.body;
-            var parts = path.split('/');
+            if (!path || path === "/" || path === "") return document.body;
+
             var el = document.body;
+            var parts = path.split('/');
+            
+            // Check for ID at the start
+            // Pattern: //*[@id="SOME_ID"]...
+            // Note: We must double-escape backslashes for Dart string interpolation
+            var idMatch = path.match(/^\\/\\/\\*\\[@id="([^"]+)"\\]/);
+            if (idMatch && idMatch[1]) {
+                var id = idMatch[1];
+                var foundEl = document.getElementById(id);
+                if (foundEl) {
+                    el = foundEl;
+                    // Remove the ID part from the path to process remaining children
+                    // path = //*[@id="foo"]/1/2
+                    // valid rest = /1/2
+                    var suffix = path.substring(idMatch[0].length);
+                    parts = suffix.split('/').filter(function(p) { return p !== ""; });
+                } else {
+                    console.log("Element with ID " + id + " not found, falling back to body traversal.");
+                    // Fallback to full traversal if ID not found? 
+                    // Usually implies ID mismatch or changed DOM.
+                    // For now, let's try to continue from body if parts allows, but usually ID is root.
+                    // If ID fails, the path is likely invalid for this DOM.
+                    return null;
+                }
+            } else {
+                 // No ID, standard root traversal
+                 // parts are already split above
+            }
+            
             for (var i = 0; i < parts.length; i++) {
-                if (parts[i] === "") continue; // Skip empty parts (handles // or leading /)
+                if (parts[i] === "") continue; 
                 var ix = parseInt(parts[i]);
-                if (isNaN(ix)) {
-                    console.log("Invalid path part: " + parts[i] + " in " + path);
-                    continue;
+                if (isNaN(ix)) continue;
+                
+                // Find ix-th sibling of interest
+                var found = null;
+                var currentIx = 0;
+                for (var j = 0; j < el.childNodes.length; j++) {
+                    var sibling = el.childNodes[j];
+                    if (sibling.nodeType === 1 || sibling.nodeType === 3) {
+                         if (currentIx === ix) {
+                             found = sibling;
+                             break;
+                         }
+                         currentIx++;
+                    }
                 }
                 
-                if (ix < el.childNodes.length) {
-                    el = el.childNodes[ix];
+                if (found) {
+                    el = found;
                 } else {
-                    console.log("Node not found: " + path + " at step " + i + " (index " + ix + "). Parent has " + el.childNodes.length + " children.");
+                    console.log("Node not found for path " + path + " at index " + ix);
                     return null;
                 }
             }
@@ -369,35 +486,75 @@ class ReaderHtmlGenerator {
         }
 
         function restorePath(path) {
+            console.log("Attempting to restore path: " + path);
             if (!path || path === "") return;
             try {
-                var parts = path.split('/').filter(p => p.length > 0);
-                var el = document.body;
-                for (var i = 0; i < parts.length; i++) {
-                    var ix = parseInt(parts[i]);
-                    if (ix < el.childNodes.length) {
-                        el = el.childNodes[ix];
-                    } else {
-                        console.log("Path restoration failed at step " + i + ": index " + ix + " out of bounds (" + el.childNodes.length + ")");
-                        return;
-                    }
+                // If path is just a number (percent), handle legacy
+                if (!path.includes('/')) {
+                     console.log("Path is legacy (percent): " + path);
+                    return; // Legacy handled in init
                 }
+
+                var el = getNodeByPath(path);
+                
                 if (el) {
-                    // Scroll into view
-                    // If it's a text node, we need to scroll its parent or a range
-                    if (el.nodeType === 3) { // Text node
-                        var range = document.createRange();
-                        range.selectNode(el);
-                        var rect = range.getBoundingClientRect();
-                        // Scroll to the rect
-                        // Since we can't call scrollIntoView on a text node or range directly in all browsers easily,
-                        // scrolling the parent is a safe bet, or using window.scrollTo
-                        if (el.parentNode) {
-                             el.parentNode.scrollIntoView({behavior: "auto", block: "center", inline: "center"});
+                    var nodeName = el.nodeType === 3 ? "TEXT" : el.tagName;
+                    var textContent = el.textContent ? el.textContent.substring(0, 20) : "";
+                    console.log("Node found: " + nodeName + " '" + textContent + "'");
+                    
+                    // Check Mode
+                    if (${scrollMode == ReaderScrollMode.horizontal}) {
+                         // Horizontal Manual Restore
+                         // We can't rely on scrollIntoView for columns.
+                         // Calculate offset relative to document flow.
+                         // The rect.left is relative to viewport. 
+                         // But we are currently at scrollLeft = 0 (probably).
+                         // Wait, if we are restored, scroll is 0. 
+                         // So rect.left is the distance from the left edge of the content.
+                         // But since we are using CSS columns, elements further down the DOM vary in horizontal position.
+                         
+                         // Better approach:
+                         // In columns, offsetLeft often returns 0 because everything is in one column box technically?
+                         // No, Chrome gives valid coordinates.
+                         var container = document.getElementById('reader-content');
+                         var currentScroll = container ? container.scrollLeft : window.scrollX;
+                         
+                         // The element's current visual position
+                         var rect;
+                         if (el.nodeType === 3) {
+                             var range = document.createRange();
+                             range.selectNode(el);
+                             rect = range.getBoundingClientRect();
+                         } else {
+                             rect = el.getBoundingClientRect();
+                         }
+                         
+                         var visualLeft = rect.left + currentScroll;
+                         
+                         // Account for padding/margins?
+                         // Visual Left should be absolute distance from start of content
+                         
+                         // Snap to page
+                         var pageIndex = Math.floor(visualLeft / window.innerWidth);
+                         var targetScroll = pageIndex * window.innerWidth;
+                         
+                         console.log("Restoring Horizontal: RectLeft=" + rect.left + " CurScroll=" + currentScroll + " VisualLeft=" + visualLeft + " Page=" + pageIndex + " Target=" + targetScroll);
+                         
+                         if (container) {
+                             container.scrollLeft = targetScroll;
+                         } else {
+                             window.scrollTo(targetScroll, 0);
+                         }
+                    } else {
+                        // Vertical Mode
+                        if (el.nodeType === 3 && el.parentNode) { // Text node
+                            el.parentNode.scrollIntoView(true); // Top align
+                        } else if (el.scrollIntoView) {
+                            el.scrollIntoView(true);
                         }
-                    } else if (el.scrollIntoView) {
-                        el.scrollIntoView({behavior: "auto", block: "center", inline: "center"});
                     }
+                } else {
+                    console.log("Node NOT found for path: " + path);
                 }
             } catch (e) { console.log("Error restoring path: " + e); }
         }
@@ -443,6 +600,23 @@ class ReaderHtmlGenerator {
            document.getElementById('btn-copy').addEventListener('mousedown', function(e) { handleAction(e, 'copy'); });
            document.getElementById('btn-share').addEventListener('mousedown', function(e) { handleAction(e, 'share'); });
 
+           function getCFI() {
+                var selection = window.getSelection();
+                if (selection.rangeCount > 0) {
+                    var range = selection.getRangeAt(0);
+                    var startPath = getPathTo(range.startContainer);
+                    var endPath = getPathTo(range.endContainer);
+                    return JSON.stringify({
+                        startPath: startPath,
+                        startOffset: range.startOffset,
+                        endPath: endPath,
+                        endOffset: range.endOffset,
+                        text: selection.toString()
+                    });
+                }
+                return null;
+           }
+           
            function handleAction(e, action) {
                e.preventDefault();
                e.stopPropagation();
@@ -452,10 +626,6 @@ class ReaderHtmlGenerator {
                if (window.flutter_inappwebview) {
                    window.flutter_inappwebview.callHandler('onMenuAction', action, cfi, text);
                }
-               
-               // We do NOT apply highlight here immediately. 
-               // We wait for Flutter to save it and then call applyHighlight via JS.
-               // This prevents race conditions and ensures we have the DB ID.
                
                window.getSelection().removeAllRanges();
                hideMenu();
@@ -477,32 +647,62 @@ class ReaderHtmlGenerator {
            // Initialize Observers
            if (${scrollMode == ReaderScrollMode.vertical}) {
                setupVerticalObservers();
+           } else {
+               // Horizontal Observers
+               setupHorizontalObservers();
            }
-           
-           // Scroll to anchor if requested
-           if (initialScrollAnchor) {
-               setTimeout(function() {
-                   var el = document.getElementById(initialScrollAnchor);
-                   if (el) {
-                       el.scrollIntoView();
-                   }
-               }, 100);
-           } else if (initialProgress && initialProgress !== '0.0' && initialProgress !== '') {
-               // Restore logic
-               // FIX: Check for slash to identify path even if it doesn't start with one
-               if (initialProgress.includes('/') || initialProgress.startsWith('/')) {
-                   setTimeout(function() { restorePath(initialProgress); }, 100);
-               } else {
-                   var pct = parseFloat(initialProgress);
-                   if (pct > 0) {
-                       if (${scrollMode == ReaderScrollMode.horizontal}) {
-                          window.scrollTo(document.body.scrollWidth * pct, 0);
-                       } else {
-                          window.scrollTo(0, (document.body.scrollHeight - window.innerHeight) * pct);
-                       }
-                   }
-               }
-           }
+                      // Scroll restore
+            var restoreDelay = 500; // Increased to 500ms
+            
+            if (initialProgress === 'END') {
+                console.log("Restoring to END");
+                setTimeout(function() {
+                    if (${scrollMode == ReaderScrollMode.horizontal}) {
+                         var container = document.getElementById('reader-content');
+                         if (container) container.scrollLeft = container.scrollWidth;
+                    } else {
+                         window.scrollTo(0, document.body.scrollHeight);
+                    }
+                    document.body.classList.remove('loading');
+                }, restoreDelay);
+                
+            } else if (initialScrollAnchor) {
+                setTimeout(function() {
+                    var el = document.getElementById(initialScrollAnchor);
+                    if (el) {
+                        el.scrollIntoView();
+                    }
+                    document.body.classList.remove('loading');
+                }, restoreDelay);
+            } else if (initialProgress && initialProgress !== '') {
+                // Restore logic
+                if (initialProgress.includes('/') || initialProgress.startsWith('/')) {
+                    console.log("Restoring CFI Path: " + initialProgress);
+                    setTimeout(function() { 
+                        restorePath(initialProgress); 
+                        document.body.classList.remove('loading');
+                    }, restoreDelay);
+                } else {
+                    // Legacy Percent
+                    var pct = parseFloat(initialProgress);
+                    if (pct > 0) {
+                        setTimeout(function() {
+                             if (${scrollMode == ReaderScrollMode.horizontal}) {
+                                var container = document.getElementById('reader-content');
+                                if (container) container.scrollLeft = container.scrollWidth * pct;
+                             } else {
+                                window.scrollTo(0, (document.body.scrollHeight - window.innerHeight) * pct);
+                             }
+                             document.body.classList.remove('loading');
+                        }, restoreDelay);
+                    } else {
+                        document.body.classList.remove('loading');
+                    }
+                }
+            } else {
+                // No restore needed
+                document.body.classList.remove('loading');
+            }
            
            // Highlights
            var highlights = $highlightsJson;
@@ -512,89 +712,339 @@ class ReaderHtmlGenerator {
         };
         
         if (document.readyState === 'loading') {
-            document.addEventListener('DOMContentLoaded', init);
+            document.addEventListener('DOMContentLoaded', function() {
+                console.log("Reader: DOMContentLoaded");
+                init();
+            });
         } else {
+            console.log("Reader: Immediate init");
             init();
         }
+        
 
+        /* ---------------- INTERACTION HELPER ---------------- */
+        function isInteractive(target) {
+            if (!target) return false;
+            // Check specific UI components
+            if (target.closest('.menu-item') || 
+                target.closest('#custom-menu') || 
+                target.closest('.highlight') ||
+                target.closest('a') ||
+                target.closest('button') ||
+                target.closest('input') ||
+                target.closest('textarea') ||
+                target.closest('select')) {
+                return true;
+            }
+            // Check SVG explicitly if closest fails (rare but safe)
+            if (target.tagName === 'svg' || target.tagName === 'path' || target.tagName === 'rect') {
+                 // Traverse up to find menu? Already handled by closest ideally.
+                 // Assume SVGs in this reader are mostly icons for buttons
+                 if (target.closest('.menu-icon') || target.closest('.next-chapter-button')) return true;
+            }
+            return false;
+        }
 
+        /* ---------------- VERTICAL OBSERVERS ---------------- */
         function setupVerticalObservers() {
-            // 1. Active Chapter Observer (Anchors)
-            // We use a scroll listener for more reliable "top of screen" detection
-            
-            function checkActiveChapter() {
-                var triggerLine = window.innerHeight * 0.2;
-                var activeAnchor = null;
-                
-                for (var i = 0; i < chapterAnchors.length; i++) {
-                    var a = chapterAnchors[i];
-                    if (!a.id) continue;
-                    var el = document.getElementById(a.id);
-                    if (!el) continue;
-                    
-                    var rect = el.getBoundingClientRect();
-                    
-                    if (rect.top < triggerLine) {
-                        activeAnchor = a;
-                    } else {
-                        break;
-                    }
-                }
-                
-                if (activeAnchor) {
-                    if (window.flutter_inappwebview) {
-                        if (window._lastSentChapterIndex !== activeAnchor.chapterIndex) {
-                             window._lastSentChapterIndex = activeAnchor.chapterIndex;
-                             window.flutter_inappwebview.callHandler('onActiveChapterChanged', activeAnchor.chapterIndex);
-                        }
-                    }
-                }
-            }
-
-            function reportReadingLocation() {
-                // Find the element at the top of the viewport (with some offset)
-                var x = window.innerWidth / 2;
-                var y = window.innerHeight * 0.2; // 20% down
-                
-                var el = document.elementFromPoint(x, y);
-                if (!el) return;
-
-                // If we hit a text node's parent (most likely), that's good.
-                // If we hit the body, try to find a child.
-                if (el === document.body) {
-                     // Try a bit lower if we hit body (maybe margin/padding)
-                     el = document.elementFromPoint(x, y + 50);
-                }
-                
-                if (el && el !== document.body) {
-                    var path = getPathTo(el);
-                    if (path) {
-                        if (window.flutter_inappwebview) {
-                            window.flutter_inappwebview.callHandler('onScrollProgress', path);
-                        }
-                    }
-                }
-            }
-            
-            // Throttle scroll event
-            var lastScrollTime = 0;
+             var lastScrollTime = 0;
             window.addEventListener('scroll', function() {
                 var now = new Date().getTime();
-                if (now - lastScrollTime > 500) { // Check every 500ms (less frequent than before to save resources)
+                if (now - lastScrollTime > 200) { // Throttle
                     lastScrollTime = now;
-                    checkActiveChapter();
                     reportReadingLocation();
                 }
             });
             
-            // Initial check
-            setTimeout(function() {
-                checkActiveChapter();
-                reportReadingLocation();
-            }, 500);
+            // Add Click Handler for Vertical Mode (Toggle Controls)
+            // Add Click Handler for Vertical Mode (Toggle Controls)
+            document.addEventListener('click', function(e) {
+                if (inputBlocked) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log("Reader: Click Blocked (Input Disabled)");
+                    return;
+                }
+                
+                // 1. Interactive Check
+                if (isInteractive(e.target)) return;
+                
+                // 2. Z-Layer: If Menu is Open, Close it ONLY
+                if (isMenuOpen()) {
+                     hideMenu();
+                     return;
+                }
+                
+                // 3. Safe Zones (Navbar Areas)
+                // In Vertical, scrollbar is native, but Navbars are overlaid.
+                var y = e.clientY;
+                if (y < 80 || y > window.innerHeight - 80) return;
+                
+                // 4. Toggle controls
+                if (window.flutter_inappwebview) {
+                    window.flutter_inappwebview.callHandler('onTap');
+                }
+            });
+            
+             function reportReadingLocation() {
+                var path = getReadingLocation();
+                if (path && window.flutter_inappwebview) {
+                    window.flutter_inappwebview.callHandler('onScrollProgress', path);
+                }
+            }
+            
+            function getReadingLocation() {
+                var x = window.innerWidth / 2;
+                var y = window.innerHeight * 0.2;
+                var el = document.elementFromPoint(x, y);
+                if (!el || el === document.body) el = document.elementFromPoint(x, y + 50);
+                
+                if (el && el !== document.body) {
+                    return getPathTo(el);
+                }
+                return null;
+            }
+            
+            window.getCurrentLocationPath = getReadingLocation;
         }
+
+        /* ---------------- HORIZONTAL OBSERVERS ---------------- */
+         function setupHorizontalObservers() {
+              console.log("Reader: Setting up Horizontal Observers...");
+              
+              var container = document.getElementById('reader-content');
+              if (!container) {
+                  console.log("Reader: Container not found! Falling back to window.");
+                  container = window; // Fallback? But logic differs
+                  // Actually, if we use window, we need different logic.
+                  // Let's assume container exists because we just injected it.
+              }
+              
+              // Custom Touch Pagination + Tap Zones
+              var touchStartX = 0;
+              var touchStartY = 0;
+              var touchStartTime = 0;
+              var isDragging = false;
+              var isScrolling = false; // scrolling vertically or selecting
+              
+              const width = window.innerWidth;
+              
+              document.addEventListener('touchstart', function(e) {
+                  if (inputBlocked) return; // Block interaction
+                  
+                  // Always capture interaction start
+                  if (e.touches.length !== 1) return;
+                  touchStartX = e.touches[0].clientX;
+                  touchStartY = e.touches[0].clientY;
+                  touchStartTime = new Date().getTime();
+                  isDragging = true;
+                  isScrolling = false;
+              }, {passive: false});
+              
+              document.addEventListener('touchmove', function(e) {
+                   if (inputBlocked) {
+                       e.preventDefault(); 
+                       return;
+                   }
+                   if (interactionLocked) {
+                       e.preventDefault(); // Strict Scroll Lock
+                       return;
+                   }
+                   if (!isDragging) return;
+                   
+                   var x = e.touches[0].clientX;
+                   var y = e.touches[0].clientY;
+                   var diffX = touchStartX - x;
+                   var diffY = touchStartY - y;
+                   
+                   // Vertical Scroll Detection
+                   if (!isScrolling) {
+                       if (Math.abs(diffY) > Math.abs(diffX)) {
+                           isScrolling = true;
+                           isDragging = false;
+                           return; 
+                       }
+                   }
+                   
+                   if (isScrolling) return;
+
+                   // Horizontal Swipe Logic
+                   e.preventDefault(); // Prevent native
+                   var currentScrollX = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                   if (container.scrollTo) {
+                       container.scrollTo(currentScrollX + diffX, 0);
+                   } else {
+                       container.scrollLeft = currentScrollX + diffX;
+                   }
+              }, {passive: false});
+
+              document.addEventListener('touchend', function(e) {
+                  if (inputBlocked) {
+                      e.preventDefault();
+                      return;
+                  }
+                  
+                  if (!isDragging) return;
+                  isDragging = false;
+                  
+                  var touchEndX = e.changedTouches[0].clientX;
+                  var diffX = touchStartX - touchEndX;
+                  var timeDiff = new Date().getTime() - touchStartTime;
+                  
+                  // Detect Tap
+                  if (timeDiff < 300 && Math.abs(diffX) < 10 && Math.abs(touchStartY - e.changedTouches[0].clientY) < 10) {
+                      
+                      // 1. Check if user tapped an interactive element
+                      if (isInteractive(e.target)) {
+                           console.log("Reader: Tap on Interactive Element -> Ignoring Toggle");
+                           return; // Let native click proceed
+                      }
+                      
+                      // 2. Z-Layer: If Menu is Open, Close it ONLY (Keep controls)
+                      if (isMenuOpen()) {
+                          console.log("Reader: Tap outside Open Menu -> Closing Menu Only");
+                          hideMenu();
+                          return;
+                      }
+                      
+                      // 3. If Locked, check Safe Zones (Navbars)
+                      if (interactionLocked) {
+                          var y = e.changedTouches[0].clientY;
+                          var h = window.innerHeight;
+                          // Ignore taps in the top/bottom 80px (Navbar areas)
+                          if (y < 80 || y > h - 80) {
+                              console.log("Reader: Locked Tap in Safe Zone (Navbar) -> Ignoring");
+                              return;
+                          }
+                          
+                          console.log("Reader: Locked Tap on Content -> Dismissing Controls");
+                          if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onTap');
+                          return;
+                      }
+                      
+                      // 4. If Unlocked, handle Tap Zones
+                      handleTap(touchStartX);
+                      return; 
+                  }
+                  
+                  // Detect Swipe
+                  if (interactionLocked) return; // Ignore Swipes if Locked
+
+                  var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                  var currentPage = Math.round(curScroll / width);
+                  var targetPage = currentPage;
+                      
+                  if (Math.abs(diffX) > 50) { 
+                      if (diffX > 0) { targetPage = currentPage + 1; } 
+                      else { targetPage = currentPage - 1; }
+                  }
+                  snapToPage(targetPage);
+              });
+              
+              function handleTap(x) {
+                  var width = window.innerWidth;
+                  var p = x / width;
+                  console.log("Reader: Tap at " + p);
+                  
+                  if (p < 0.2) {
+                      snapToPage(Math.round((container.scrollLeft || window.scrollX) / width) - 1);
+                  } else if (p > 0.8) {
+                      snapToPage(Math.round((container.scrollLeft || window.scrollX) / width) + 1);
+                  } else {
+                      // Center Tap -> Toggle
+                      if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onTap');
+                  }
+              }
+              
+              function snapToPage(pageIndex) {
+                  // container scrollWidth
+                  var scrollW = container.scrollWidth !== undefined ? container.scrollWidth : document.body.scrollWidth;
+                  var maxPage = Math.ceil(scrollW / width) - 1;
+                  
+                  if (pageIndex < 0) {
+                      if (container.scrollTo) container.scrollTo({left: 0, behavior: 'smooth'});
+                      else container.scrollLeft = 0;
+                      
+                      if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onPrevChapter');
+                      return;
+                  }
+                  
+                  if (pageIndex > maxPage) {
+                      if (container.scrollTo) container.scrollTo({left: maxPage * width, behavior: 'smooth'});
+                      else container.scrollLeft = maxPage * width;
+                      
+                      if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onNextChapter');
+                      return;
+                  }
+                  
+                  if (container.scrollTo) {
+                      container.scrollTo({
+                         left: pageIndex * width,
+                         behavior: 'smooth'
+                      });
+                  } else {
+                      // Helper for smooth scroll manually?
+                      container.scrollLeft = pageIndex * width;
+                  }
+   
+                  setTimeout(reportHorizontalLocation, 300);
+              }
+              
+              function reportHorizontalLocation() {
+                  var path = getHorizontalLocation();
+                  if (path && window.flutter_inappwebview) {
+                      window.flutter_inappwebview.callHandler('onScrollProgress', path);
+                  }
+                  
+                  // Near End Check
+                  var scrollW = container.scrollWidth !== undefined ? container.scrollWidth : document.body.scrollWidth;
+                  var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                  
+                  var remaining = scrollW - curScroll - window.innerWidth;
+                  
+                  // console.log("Reader: Progress " + curScroll + " / " + scrollW);
+                  
+                  if (remaining < window.innerWidth * 1.5) { 
+                      if (window.flutter_inappwebview) {
+                          window.flutter_inappwebview.callHandler('onNearEnd');
+                      }
+                  }
+              }
+              
+              function getHorizontalLocation() {
+                  var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                  var x = curScroll - curScroll + 40; // Relative to viewport??
+                  // elementFromPoint uses Viewport coordinates (window based). 
+                  // So x should just be 40 if the sticky header is there?
+                  // Wait. If we scroll the CONTAINER, the viewport coordinates of the text change?
+                  // No, the text moves left. So text at left edge is what we want.
+                  // Text at x=40, y=60 (screen coords) IS the text we are reading.
+                  var xScreen = 40;
+                  var yScreen = 60;
+                  
+                  var range, node;
+                  if (document.caretRangeFromPoint) {
+                      range = document.caretRangeFromPoint(xScreen, yScreen);
+                      if (range) node = range.startContainer;
+                  }
+                  if (!node) node = document.elementFromPoint(xScreen, yScreen);
+                  
+                  if (node) {
+                      if (node.nodeType === 3) {}
+                      return getPathTo(node);
+                  }
+                  return null;
+              }
+              
+              window.getCurrentLocationPath = getHorizontalLocation;
+ 
+              // Initial check
+              setTimeout(reportHorizontalLocation, 500);
+         }
+
         
         function showMenu(rect) {
+
             var menu = document.getElementById('custom-menu');
             if (!menu) return;
             
@@ -631,6 +1081,11 @@ class ReaderHtmlGenerator {
             var menu = document.getElementById('custom-menu');
             if (menu) menu.style.display = 'none';
         }
+        
+        function isMenuOpen() {
+            var menu = document.getElementById('custom-menu');
+            return menu && menu.style.display !== 'none' && menu.style.display !== '';
+        }
 
         function getCFI() {
              var selection = window.getSelection();
@@ -648,140 +1103,83 @@ class ReaderHtmlGenerator {
              }
              return null;
         }
-        
-        function applyHighlight(cfiStr, id) {
+
+        function applyHighlight(cfi, id) {
+            console.log("Applying highlight: " + id + " path: " + cfi);
             try {
-                var cfi = JSON.parse(cfiStr);
-                var startNode = getNodeByPath(cfi.startPath);
-                var endNode = getNodeByPath(cfi.endPath);
+                // Parse CFI if it's a JSON string
+                var pathObj = cfi;
+                if (typeof cfi === 'string') {
+                    if (cfi.startsWith('{')) {
+                        pathObj = JSON.parse(cfi);
+                    } else {
+                        // Legacy path string? Not supported for highlights usually
+                        return;
+                    }
+                }
+                
+                var startNode = getNodeByPath(pathObj.startPath);
+                var endNode = getNodeByPath(pathObj.endPath);
+                
                 if (startNode && endNode) {
                     var range = document.createRange();
-                    range.setStart(startNode, cfi.startOffset);
-                    range.setEnd(endNode, cfi.endOffset);
+                    
+                    // Handle Text Nodes vs Elements
+                    if (startNode.nodeType === 3) {
+                        range.setStart(startNode, pathObj.startOffset);
+                    } else {
+                        range.setStart(startNode, 0); 
+                    }
+                    
+                    if (endNode.nodeType === 3) {
+                        range.setEnd(endNode, pathObj.endOffset);
+                    } else {
+                        range.setEnd(endNode, 0); 
+                    }
+                    
                     var span = document.createElement('span');
                     span.className = 'highlight';
-                    if (id) {
-                        span.id = 'highlight-' + id;
-                        span.onclick = function(e) {
-                            e.stopPropagation();
-                            window.flutter_inappwebview.callHandler('onHighlightClick', id);
-                        };
-                    }
+                    span.dataset.id = id;
+                    span.style.backgroundColor = 'rgba(255, 235, 59, 0.5)'; // Yellow
+                    span.style.cursor = 'pointer';
+                    
+                    span.onclick = function(e) {
+                         e.stopPropagation();
+                         // Show menu or delete option?
+                         console.log("Clicked highlight " + id);
+                    };
+                    
                     range.surroundContents(span);
                 } else {
-                    console.log("Could not find nodes for highlight: " + id + " Start: " + cfi.startPath + " End: " + cfi.endPath);
+                    console.log("Nodes not found for highlight " + id);
                 }
-            } catch(e) { console.log("Error applying highlight: " + e); }
-        }
-
-        function removeHighlight(id) {
-            var span = document.getElementById('highlight-' + id);
-            if (span) {
-                var parent = span.parentNode;
-                while (span.firstChild) parent.insertBefore(span.firstChild, span);
-                parent.removeChild(span);
+            } catch (e) {
+                console.log("Error applying highlight: " + e);
             }
         }
         
 
-        function setTheme(textColor) {
-            // Background is handled by Flutter Scaffold transparency
-            document.body.style.setProperty('color', textColor, 'important');
-        }
-        
-        function setFontFamily(family) {
-            document.body.style.setProperty('font-family', family, 'important');
-        }
-
-        // Custom Tap Detection
-        let touchStartTime = 0;
-        let touchStartX = 0;
-        let touchStartY = 0;
-        let isTouch = false;
-        
-        document.addEventListener('touchstart', function(e) {
-            isTouch = true;
-            touchStartTime = new Date().getTime();
-            touchStartX = e.changedTouches[0].clientX;
-            touchStartY = e.changedTouches[0].clientY;
-        }, {passive: true});
-        
-        document.addEventListener('touchend', function(e) {
-            let touchEndTime = new Date().getTime();
-            let touchEndX = e.changedTouches[0].clientX;
-            let touchEndY = e.changedTouches[0].clientY;
-            
-            let diffX = Math.abs(touchEndX - touchStartX);
-            let diffY = Math.abs(touchEndY - touchStartY);
-            let timeDiff = touchEndTime - touchStartTime;
-            
-            // Tap criteria: short duration, little movement
-            if (timeDiff < 300 && diffX < 10 && diffY < 10) {
-                // Check if we tapped a link or the menu
-                if (e.target.tagName === 'A' || e.target.closest('#custom-menu') || e.target.closest('.next-chapter-button')) {
-                    return;
-                }
-                
-                // Check if text is selected
-                if (window.getSelection().toString().length > 0) {
-                    return;
-                }
-                
-                // Trigger toggle
-                if (window.flutter_inappwebview) {
-                   window.flutter_inappwebview.callHandler('onTap');
-                }
-            }
-        }, {passive: true});
-
-        // Fallback click for desktop or if touch fails
-        document.addEventListener('click', function(e) {
-            if (!isTouch) {
-                if (e.target.tagName === 'A' || e.target.closest('#custom-menu') || e.target.closest('.next-chapter-button')) return;
-                if (window.getSelection().toString().length > 0) return;
-                
-                if (window.flutter_inappwebview) {
-                   window.flutter_inappwebview.callHandler('onTap');
-                }
-            }
-            // Reset isTouch after a delay to allow mixed usage? 
-            // Usually not needed for mobile-only, but good for hybrid.
-            setTimeout(() => isTouch = false, 500);
-        });
-        
-        // Debug selection
-        document.addEventListener('selectionchange', function() {
-            var selection = window.getSelection();
-            if (selection.rangeCount > 0 && !selection.isCollapsed && selection.toString().trim().length > 0) {
-                var range = selection.getRangeAt(0);
-                var rect = range.getBoundingClientRect();
-                showMenu(rect);
-            } else {
-                hideMenu();
-            }
-        });
 
       </script>
 
     ''';
 
-    // Build the final HTML with CSS injected
-    // We use a robust injection strategy
-    String finalHtml = processedContent;
+    // Wrap initial content in a chapter container for consistency
+    // This allows the JS observer to treat all chapters (initial + appended) uniformly
+    String finalHtml =
+        '''
+      <div id="reader-content">
+        <div class="chapter-container" data-chapter-index="$currentChapterIndex">
+          $processedContent
+        </div>
+      </div>
+    ''';
 
-    // Ensure standard HTML5 doctype and remove XML namespaces that might trigger quirks/XML mode
+    // Ensure standard HTML5 doctype and remove XML namespaces
     if (!finalHtml.toLowerCase().startsWith('<!doctype html>')) {
       finalHtml = '<!DOCTYPE html>\n$finalHtml';
     }
-    finalHtml = finalHtml.replaceAll(
-      RegExp(
-        r'xmlns=["'
-        '][^"'
-        ']*["'
-        ']',
-      ),
-      '',
-    );
+    finalHtml = finalHtml.replaceAll(RegExp(r'''xmlns=["'][^"']*["']'''), '');
 
     // Inject CSS
     if (finalHtml.contains('</head>')) {
@@ -791,7 +1189,6 @@ class ReaderHtmlGenerator {
     } else if (finalHtml.contains('<html>')) {
       finalHtml = finalHtml.replaceFirst('<html>', '<html><head>$css</head>');
     } else {
-      // Should not happen with _pruneHtml returning outerHtml, but fallback:
       finalHtml =
           '''
         <!DOCTYPE html>
@@ -800,18 +1197,20 @@ class ReaderHtmlGenerator {
           <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
           $css
         </head>
-        <body>
-          $processedContent
+        <body class="loading">
+          $finalHtml
         </body>
         </html>
       ''';
     }
 
-    // Inject Arrow
-    if (finalHtml.contains('</body>')) {
-      finalHtml = finalHtml.replaceFirst('</body>', '$arrowHtml</body>');
-    } else {
-      finalHtml += arrowHtml;
+    // Inject Arrow (Vertical Mode Only)
+    if (scrollMode == ReaderScrollMode.vertical) {
+      if (finalHtml.contains('</body>')) {
+        finalHtml = finalHtml.replaceFirst('</body>', '$arrowHtml</body>');
+      } else {
+        finalHtml += arrowHtml;
+      }
     }
 
     return finalHtml;
@@ -886,6 +1285,7 @@ class ReaderHtmlGenerator {
     final bodyMatch = RegExp(
       r'<body[^>]*>(.*?)</body>',
       dotAll: true,
+      caseSensitive: false,
     ).firstMatch(html);
     return bodyMatch?.group(1) ?? html;
   }
