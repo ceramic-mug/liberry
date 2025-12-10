@@ -1,0 +1,16 @@
+- Discover section has popup book modal with metadata (Author, date published, pages, language, last updated, url, cover image, book title, book description, etc.)
+- When user downloads, they are immediately taken to book reader
+- Better Library organization: 
+    - Display default organized by "Currently reading" and "Bookshelf"
+    - Books on Bookshelf are offloaded to preserve storage, but their highlights and characters are preserved
+    - Collapsible view for easier scrolling instead of all book covers
+    - Sort by author, sort by title, sort by date added, sort by most recently read
+    - Keep track of "Read" and "Reading" status
+    - Add search bar, which searches by title (first), author (second), and highlights connected to the book (third)
+    - Add "Add to Bookshelf" button to book detail view, or on long press
+- Book detail view:
+    - Remove file path display in library book detail modal
+    - Add date published, date updated, source, language
+    - Add rating (out of 5 stars) entry for reader
+    - Add "notes" entry for reader
+    

@@ -23,7 +23,8 @@ class DownloadManager {
       await _dio.download(url, savePath);
 
       // Add to repository
-      await _bookRepo.addBook(savePath, remoteCoverUrl: coverUrl);
+      // FIX: Store only the filename (relative path) in DB to survive container UUID changes on iOS
+      await _bookRepo.addBook(filename, remoteCoverUrl: coverUrl);
     } catch (e) {
       rethrow;
     }

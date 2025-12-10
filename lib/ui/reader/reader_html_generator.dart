@@ -485,14 +485,31 @@ class ReaderHtmlGenerator {
             return el;
         }
 
-        function restorePath(path) {
-            console.log("Attempting to restore path: " + path);
-            if (!path || path === "") return;
+        function restorePath(pathData) {
+            console.log("Attempting to restore: " + pathData);
+            if (!pathData || pathData === "") return;
+            
             try {
-                // If path is just a number (percent), handle legacy
+                var path = pathData;
+                var offset = 0;
+                var isPrecise = false;
+                
+                // Parse JSON if applicable
+                if (pathData.trim().startsWith('{')) {
+                    try {
+                        var json = JSON.parse(pathData);
+                        path = json.path;
+                        offset = json.offset || 0;
+                        isPrecise = true;
+                    } catch (e) {
+                         console.log("Error parsing path JSON: " + e);
+                    }
+                }
+                
+                // Legacy check
                 if (!path.includes('/')) {
                      console.log("Path is legacy (percent): " + path);
-                    return; // Legacy handled in init
+                    return; 
                 }
 
                 var el = getNodeByPath(path);
@@ -500,27 +517,37 @@ class ReaderHtmlGenerator {
                 if (el) {
                     var nodeName = el.nodeType === 3 ? "TEXT" : el.tagName;
                     var textContent = el.textContent ? el.textContent.substring(0, 20) : "";
-                    console.log("Node found: " + nodeName + " '" + textContent + "'");
+                    console.log("Restoring Node found: " + nodeName + " '" + textContent + "' offset: " + offset);
                     
-                    // Check Mode
-                    if (${scrollMode == ReaderScrollMode.horizontal}) {
-                         // Horizontal Manual Restore
-                         // We can't rely on scrollIntoView for columns.
-                         // Calculate offset relative to document flow.
-                         // The rect.left is relative to viewport. 
-                         // But we are currently at scrollLeft = 0 (probably).
-                         // Wait, if we are restored, scroll is 0. 
-                         // So rect.left is the distance from the left edge of the content.
-                         // But since we are using CSS columns, elements further down the DOM vary in horizontal position.
-                         
-                         // Better approach:
-                         // In columns, offsetLeft often returns 0 because everything is in one column box technically?
-                         // No, Chrome gives valid coordinates.
-                         var container = document.getElementById('reader-content');
-                         var currentScroll = container ? container.scrollLeft : window.scrollX;
-                         
-                         // The element's current visual position
-                         var rect;
+                    // Determine Rect
+                    var rect;
+                    
+                    if (isPrecise && el.nodeType === 3) {
+                         // Create range for specific character position
+                         try {
+                            var range = document.createRange();
+                            // Ensure offset is valid
+                            if (offset > el.textContent.length) offset = el.textContent.length;
+                            range.setStart(el, offset);
+                            range.setEnd(el, offset); // Collapsed range at point
+                            
+                            // range.getBoundingClientRect() gives 0 width but valid x/y
+                            // However, getClientRects() is safer for wrapped lines
+                            var rects = range.getClientRects();
+                            if (rects.length > 0) {
+                                rect = rects[0];
+                            } else {
+                                rect = range.getBoundingClientRect();
+                            }
+                         } catch (e) {
+                             console.log("Range creation failed: " + e); 
+                             // Fallback
+                             var r = document.createRange();
+                             r.selectNode(el);
+                             rect = r.getBoundingClientRect();
+                         }
+                    } else {
+                        // Element or fallback
                          if (el.nodeType === 3) {
                              var range = document.createRange();
                              range.selectNode(el);
@@ -528,13 +555,19 @@ class ReaderHtmlGenerator {
                          } else {
                              rect = el.getBoundingClientRect();
                          }
+                    }
+
+                    // Check Mode
+                    if (${scrollMode == ReaderScrollMode.horizontal}) {
+                         var container = document.getElementById('reader-content');
+                         var currentScroll = container ? container.scrollLeft : window.scrollX;
                          
+                         // Visual Left absolute distance from start of content
                          var visualLeft = rect.left + currentScroll;
                          
-                         // Account for padding/margins?
-                         // Visual Left should be absolute distance from start of content
-                         
                          // Snap to page
+                         // Ensure we don't round down if we are EXACTLY on edge, but floor handles that.
+                         // But if rect.left is e.g. -0.5, it might be page -1? No rect.left is viewport relative.
                          var pageIndex = Math.floor(visualLeft / window.innerWidth);
                          var targetScroll = pageIndex * window.innerWidth;
                          
@@ -547,10 +580,20 @@ class ReaderHtmlGenerator {
                          }
                     } else {
                         // Vertical Mode
-                        if (el.nodeType === 3 && el.parentNode) { // Text node
-                            el.parentNode.scrollIntoView(true); // Top align
-                        } else if (el.scrollIntoView) {
-                            el.scrollIntoView(true);
+                        if (rect) {
+                             // Scroll so rect.top aligns with top (plus some padding?)
+                             // window.scrollTo(0, window.scrollY + rect.top - 60); 
+                             // Wait, rect.top is relative to viewport.
+                             // Absolute Y = window.scrollY + rect.top.
+                             // We probed at 60. So we want to put it at 60.
+                             var targetY = window.scrollY + rect.top - 60;
+                             window.scrollTo(0, targetY);
+                        } else {
+                            if (el.nodeType === 3 && el.parentNode) { 
+                                el.parentNode.scrollIntoView(true); 
+                            } else {
+                                el.scrollIntoView(true);
+                            }
                         }
                     }
                 } else {
@@ -664,6 +707,7 @@ class ReaderHtmlGenerator {
                          window.scrollTo(0, document.body.scrollHeight);
                     }
                     document.body.classList.remove('loading');
+                    isRestoring = false; // Enable Saving
                 }, restoreDelay);
                 
             } else if (initialScrollAnchor) {
@@ -673,6 +717,7 @@ class ReaderHtmlGenerator {
                         el.scrollIntoView();
                     }
                     document.body.classList.remove('loading');
+                    isRestoring = false; // Enable Saving
                 }, restoreDelay);
             } else if (initialProgress && initialProgress !== '') {
                 // Restore logic
@@ -681,6 +726,7 @@ class ReaderHtmlGenerator {
                     setTimeout(function() { 
                         restorePath(initialProgress); 
                         document.body.classList.remove('loading');
+                        isRestoring = false; // Enable Saving
                     }, restoreDelay);
                 } else {
                     // Legacy Percent
@@ -694,14 +740,17 @@ class ReaderHtmlGenerator {
                                 window.scrollTo(0, (document.body.scrollHeight - window.innerHeight) * pct);
                              }
                              document.body.classList.remove('loading');
+                             isRestoring = false; // Enable Saving
                         }, restoreDelay);
                     } else {
                         document.body.classList.remove('loading');
+                        isRestoring = false; // Enable Saving
                     }
                 }
             } else {
                 // No restore needed
                 document.body.classList.remove('loading');
+                isRestoring = false; // Enable Saving
             }
            
            // Highlights
@@ -745,6 +794,9 @@ class ReaderHtmlGenerator {
             return false;
         }
 
+        // Global restoring flag
+        var isRestoring = true;
+
         /* ---------------- VERTICAL OBSERVERS ---------------- */
         function setupVerticalObservers() {
              var lastScrollTime = 0;
@@ -756,7 +808,6 @@ class ReaderHtmlGenerator {
                 }
             });
             
-            // Add Click Handler for Vertical Mode (Toggle Controls)
             // Add Click Handler for Vertical Mode (Toggle Controls)
             document.addEventListener('click', function(e) {
                 if (inputBlocked) {
@@ -787,6 +838,10 @@ class ReaderHtmlGenerator {
             });
             
              function reportReadingLocation() {
+                if (isRestoring) {
+                    console.log("Skipping save: Restoring in progress");
+                    return;
+                }
                 var path = getReadingLocation();
                 if (path && window.flutter_inappwebview) {
                     window.flutter_inappwebview.callHandler('onScrollProgress', path);
@@ -794,16 +849,155 @@ class ReaderHtmlGenerator {
             }
             
             function getReadingLocation() {
-                var x = window.innerWidth / 2;
-                var y = window.innerHeight * 0.2;
-                var el = document.elementFromPoint(x, y);
-                if (!el || el === document.body) el = document.elementFromPoint(x, y + 50);
+                var x = 60; 
+                var y = 60; 
                 
-                if (el && el !== document.body) {
-                    return getPathTo(el);
+                // 1. Precise check: caretPositionFromPoint (Standard)
+                if (document.caretPositionFromPoint) {
+                    var pos = document.caretPositionFromPoint(x, y);
+                    if (pos && pos.offsetNode) {
+                        var path = getPathTo(pos.offsetNode);
+                        var offset = pos.offset;
+                        // console.log("DEBUG: Precision Location via CaretPosition: " + path + " offset: " + offset);
+                        return JSON.stringify({ type: 'precise', path: path, offset: offset });
+                    }
                 }
+                // 2. Precise check: caretRangeFromPoint (WebKit)
+                else if (document.caretRangeFromPoint) {
+                    var range = document.caretRangeFromPoint(x, y);
+                    if (range && range.startContainer) {
+                         var path = getPathTo(range.startContainer);
+                         var offset = range.startOffset;
+                         // console.log("DEBUG: Precision Location via CaretRange: " + path + " offset: " + offset);
+                         return JSON.stringify({ type: 'precise', path: path, offset: offset });
+                    }
+                }
+                
+                // 3. Fallback Probe Loop (Element only)
+                for (var i = 0; i < 5; i++) {
+                     var testY = y + (i * 40);
+                     var el = document.elementFromPoint(x, testY);
+                     // console.log("DEBUG Probe: " + x + "," + testY + " Found: " + (el ? el.tagName : "null") + " ID: " + (el ? el.id : ""));
+                     
+                     if (el && el !== document.body && el !== document.documentElement) {
+                         var path = getPathTo(el);
+                         // console.log("DEBUG: Found fallback location: " + path);
+                         return path; 
+                     }
+                }
+                
+                // 4. Fallback Center
+                var el = document.elementFromPoint(window.innerWidth / 2, window.innerHeight * 0.3);
+                if (el && el !== document.body) return getPathTo(el);
+                
                 return null;
             }
+
+        function restorePath(pathData) {
+            console.log("Attempting to restore: " + pathData);
+            if (!pathData || pathData === "") return;
+            
+            try {
+                var path = pathData;
+                var offset = 0;
+                var isPrecise = false;
+                
+                if (pathData.trim().startsWith('{')) {
+                    try {
+                        var json = JSON.parse(pathData);
+                        path = json.path;
+                        offset = json.offset || 0;
+                        isPrecise = true;
+                    } catch (e) {
+                         console.log("Error parsing path JSON: " + e);
+                    }
+                }
+                
+                if (!path.includes('/')) {
+                     console.log("Path is legacy (percent): " + path);
+                    return; 
+                }
+
+                var el = getNodeByPath(path);
+                
+                if (el) {
+                    var nodeName = el.nodeType === 3 ? "TEXT" : el.tagName;
+                    var textContent = el.textContent ? el.textContent.substring(0, 20) : "";
+                    console.log("Restoring Node found: " + nodeName + " '" + textContent + "' offset: " + offset);
+                    
+                    var rect;
+                    
+                    if (isPrecise && el.nodeType === 3) {
+                         try {
+                            var range = document.createRange();
+                            if (offset > el.textContent.length) offset = el.textContent.length;
+                            range.setStart(el, offset);
+                            range.setEnd(el, offset); 
+                            
+                            var rects = range.getClientRects();
+                            if (rects.length > 0) {
+                                rect = rects[0];
+                                console.log("Restoring via Range Rect: " + rect.left + "," + rect.top);
+                            } else {
+                                rect = range.getBoundingClientRect();
+                                console.log("Restoring via Range BBOX: " + rect.left + "," + rect.top);
+                            }
+                         } catch (e) {
+                             console.log("Range creation failed: " + e); 
+                             var r = document.createRange();
+                             r.selectNode(el);
+                             rect = r.getBoundingClientRect();
+                         }
+                    } else {
+                         if (el.nodeType === 3) {
+                             var range = document.createRange();
+                             range.selectNode(el);
+                             rect = range.getBoundingClientRect();
+                         } else {
+                             rect = el.getBoundingClientRect();
+                         }
+                         console.log("Restoring via Element Rect: " + rect.left + "," + rect.top);
+                    }
+
+                    if (${scrollMode == ReaderScrollMode.horizontal}) {
+                         var container = document.getElementById('reader-content');
+                         var currentScroll = container ? container.scrollLeft : window.scrollX;
+                         
+                         var visualLeft = rect.left + currentScroll;
+                         
+                         // Try to be smart about "close calls"
+                         // If x=60, visualLeft should be PageIndex * width + 60.
+                         // So (visualLeft / width) should be X.0something.
+                         // But if visualLeft is slightly less than width (e.g. 799), we are on Page 0.
+                         // If rect.left < 0? That would mean previous page.
+                         
+                         var pageIndex = Math.floor(visualLeft / window.innerWidth);
+                         var targetScroll = pageIndex * window.innerWidth;
+                         
+                         console.log("Restoring Horizontal: RectLeft=" + rect.left + " CurScroll=" + currentScroll + " VisualLeft=" + visualLeft + " WinWidth=" + window.innerWidth + " Page=" + pageIndex);
+                         
+                         if (container) {
+                             container.scrollLeft = targetScroll;
+                         } else {
+                             window.scrollTo(targetScroll, 0);
+                         }
+                    } else {
+                        if (rect) {
+                             var targetY = window.scrollY + rect.top - 60;
+                             window.scrollTo(0, targetY);
+                        } else {
+                            if (el.nodeType === 3 && el.parentNode) { 
+                                el.parentNode.scrollIntoView(true); 
+                            } else {
+                                el.scrollIntoView(true);
+                            }
+                        }
+                    }
+                } else {
+                    console.log("Node NOT found for path: " + path);
+                }
+            } catch (e) { console.log("Error restoring path: " + e); }
+        }
             
             window.getCurrentLocationPath = getReadingLocation;
         }
@@ -824,6 +1018,7 @@ class ReaderHtmlGenerator {
               var touchStartX = 0;
               var touchStartY = 0;
               var touchStartTime = 0;
+              var startScrollLeft = 0; // Capture initial scroll position
               var isDragging = false;
               var isScrolling = false; // scrolling vertically or selecting
               
@@ -837,6 +1032,7 @@ class ReaderHtmlGenerator {
                   touchStartX = e.touches[0].clientX;
                   touchStartY = e.touches[0].clientY;
                   touchStartTime = new Date().getTime();
+                  startScrollLeft = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
                   isDragging = true;
                   isScrolling = false;
               }, {passive: false});
@@ -870,12 +1066,71 @@ class ReaderHtmlGenerator {
 
                    // Horizontal Swipe Logic
                    e.preventDefault(); // Prevent native
-                   var currentScrollX = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                   
+                   // FIX: Calculate new position from START scroll, not current
+                   var newScrollLeft = startScrollLeft + diffX;
+                   
                    if (container.scrollTo) {
-                       container.scrollTo(currentScrollX + diffX, 0);
+                       container.scrollTo(newScrollLeft, 0);
                    } else {
-                       container.scrollLeft = currentScrollX + diffX;
+                       container.scrollLeft = newScrollLeft;
                    }
+              }, {passive: false});
+
+              // Wheel Event Listener for Trackpad/Mouse
+              var wheelCooldown = false;
+              var accumulatedDeltaX = 0;
+              var wheelTimer;
+              
+              document.addEventListener('wheel', function(e) {
+                  if (interactionLocked || inputBlocked) {
+                      e.preventDefault();
+                      return;
+                  }
+                  
+                  // Only hijack vertical scrolling if it's primarily horizontal (or Shift+Scroll)
+                  // Actually, trackpads often send DeltaX. 
+                  // But standard mouse wheel sends DeltaY. 
+                  // We should accept either for paging if strictly horizontal mode.
+                  
+                  e.preventDefault(); // Stop native scrolling completely in this mode
+                  
+                  if (wheelCooldown) return;
+                  
+                  var dx = e.deltaX;
+                  var dy = e.deltaY;
+                  
+                  // Use the dominant axis
+                  var delta = Math.abs(dx) > Math.abs(dy) ? dx : dy;
+                  
+                  accumulatedDeltaX += delta;
+                  
+                  // Clear accumulator if no events for a short while (user stopped)
+                  clearTimeout(wheelTimer);
+                  wheelTimer = setTimeout(function() {
+                       accumulatedDeltaX = 0;
+                  }, 200);
+                  
+                  // Threshold for page turn
+                  var threshold = 30; // Sensitive enough for trackpad flick
+                  
+                  if (accumulatedDeltaX > threshold) {
+                       // Next Page
+                       wheelCooldown = true;
+                       var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                       var page = Math.round(curScroll / width);
+                       snapToPage(page + 1);
+                       
+                       setTimeout(function() { wheelCooldown = false; accumulatedDeltaX = 0; }, 800); // 800ms lockout
+                  } else if (accumulatedDeltaX < -threshold) {
+                       // Prev Page
+                       wheelCooldown = true;
+                       var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                       var page = Math.round(curScroll / width);
+                       snapToPage(page - 1);
+                       
+                       setTimeout(function() { wheelCooldown = false; accumulatedDeltaX = 0; }, 800);
+                  }
               }, {passive: false});
 
               document.addEventListener('touchend', function(e) {
@@ -907,7 +1162,7 @@ class ReaderHtmlGenerator {
                           return;
                       }
                       
-                      // 3. If Locked, check Safe Zones (Navbars)
+                      // 3. If Locked, check Safe Zones (Navbar Areas)
                       if (interactionLocked) {
                           var y = e.changedTouches[0].clientY;
                           var h = window.innerHeight;
@@ -930,14 +1185,26 @@ class ReaderHtmlGenerator {
                   // Detect Swipe
                   if (interactionLocked) return; // Ignore Swipes if Locked
 
-                  var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
-                  var currentPage = Math.round(curScroll / width);
-                  var targetPage = currentPage;
+                  var startPage = Math.round(startScrollLeft / width);
+                  var targetPage = startPage;
                       
                   if (Math.abs(diffX) > 50) { 
-                      if (diffX > 0) { targetPage = currentPage + 1; } 
-                      else { targetPage = currentPage - 1; }
+                      // Significant swipe
+                      if (diffX > 0) { 
+                          targetPage = startPage + 1; 
+                      } else { 
+                          targetPage = startPage - 1; 
+                      }
+                  } else {
+                      // Small flick, stay on start page (snap back)
+                      targetPage = startPage;
                   }
+                  
+                  // Clamp to adjacent page only
+                  // Ensure we don't jump more than 1 page from START
+                  if (targetPage > startPage + 1) targetPage = startPage + 1;
+                  if (targetPage < startPage - 1) targetPage = startPage - 1;
+
                   snapToPage(targetPage);
               });
               

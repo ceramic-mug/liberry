@@ -198,6 +198,10 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         initialCfiOverride ??
         (index == _currentChapterIndex ? _currentProgressCfi : '');
 
+    print(
+      "DEBUG: _loadChapter index=$index override=$initialCfiOverride targetCfi=$targetCfi",
+    );
+
     setState(() {
       _currentChapterIndex = index;
     });
@@ -263,6 +267,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   }
 
   void _saveProgress(int chapterIndex, [String cfi = '']) {
+    print("DEBUG: _saveProgress chapter=$chapterIndex cfi=$cfi");
     // Save both chapter index and detailed CFI
     ref
         .read(bookRepositoryProvider)

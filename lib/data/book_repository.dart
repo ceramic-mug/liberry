@@ -146,7 +146,33 @@ class BookRepository {
   }
 
   Stream<List<Book>> watchAllBooks() {
-    return _db.select(_db.books).watch();
+    return _db.select(_db.books).watch().asyncMap((books) async {
+      return await _resolveBookPaths(books);
+    });
+  }
+
+  Future<List<Book>> _resolveBookPaths(List<Book> books) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final docsPath = appDir.path;
+
+    return books.map((book) {
+      // Check if path is already absolute (legacy support)
+      if (p.isAbsolute(book.filePath)) {
+        // Optional: Check existence and try to rescue if missing (legacy migration)
+        final file = File(book.filePath);
+        if (!file.existsSync()) {
+          final basename = p.basename(book.filePath);
+          final newPath = p.join(docsPath, basename);
+          if (File(newPath).existsSync()) {
+            return book.copyWith(filePath: newPath);
+          }
+        }
+        return book;
+      }
+
+      // It's relative (just filename), so prepend docs dir
+      return book.copyWith(filePath: p.join(docsPath, book.filePath));
+    }).toList();
   }
 
   Future<void> saveReadingProgress(String bookId, String cfi) async {
