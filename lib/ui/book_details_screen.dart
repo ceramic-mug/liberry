@@ -206,23 +206,6 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                             ),
                             const SizedBox(height: 16),
 
-                            // Rating
-                            Row(
-                              children: List.generate(5, (index) {
-                                return InkWell(
-                                  onTap: () => _updateRating(index + 1),
-                                  child: Icon(
-                                    index < _rating
-                                        ? Icons.star
-                                        : Icons.star_border,
-                                    color: Colors.amber,
-                                    size: 28,
-                                  ),
-                                );
-                              }),
-                            ),
-                            const SizedBox(height: 16),
-
                             // Action Button
                             if (book.isDownloaded)
                               FilledButton.icon(
@@ -474,6 +457,24 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                   ),
                   const SizedBox(height: 8),
                   const Center(child: Text('No characters tagged.')),
+                  const SizedBox(height: 24),
+                  Text(
+                    'Rating',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: List.generate(5, (index) {
+                      return InkWell(
+                        onTap: () => _updateRating(index + 1),
+                        child: Icon(
+                          index < _rating ? Icons.star : Icons.star_border,
+                          color: Colors.amber,
+                          size: 28,
+                        ),
+                      );
+                    }),
+                  ),
                 ],
               ),
             ),
