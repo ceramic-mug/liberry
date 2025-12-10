@@ -69,6 +69,108 @@ class $BooksTable extends Books with TableInfo<$BooksTable, Book> {
     requiredDuringInsert: false,
     defaultValue: currentDateAndTime,
   );
+  static const VerificationMeta _groupMeta = const VerificationMeta('group');
+  @override
+  late final GeneratedColumn<String> group = GeneratedColumn<String>(
+    'group',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _isReadMeta = const VerificationMeta('isRead');
+  @override
+  late final GeneratedColumn<bool> isRead = GeneratedColumn<bool>(
+    'is_read',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_read" IN (0, 1))',
+    ),
+    defaultValue: const Constant(false),
+  );
+  static const VerificationMeta _ratingMeta = const VerificationMeta('rating');
+  @override
+  late final GeneratedColumn<int> rating = GeneratedColumn<int>(
+    'rating',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _userNotesMeta = const VerificationMeta(
+    'userNotes',
+  );
+  @override
+  late final GeneratedColumn<String> userNotes = GeneratedColumn<String>(
+    'user_notes',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _downloadUrlMeta = const VerificationMeta(
+    'downloadUrl',
+  );
+  @override
+  late final GeneratedColumn<String> downloadUrl = GeneratedColumn<String>(
+    'download_url',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _sourceMetadataMeta = const VerificationMeta(
+    'sourceMetadata',
+  );
+  @override
+  late final GeneratedColumn<String> sourceMetadata = GeneratedColumn<String>(
+    'source_metadata',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _languageMeta = const VerificationMeta(
+    'language',
+  );
+  @override
+  late final GeneratedColumn<String> language = GeneratedColumn<String>(
+    'language',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _publishedDateMeta = const VerificationMeta(
+    'publishedDate',
+  );
+  @override
+  late final GeneratedColumn<DateTime> publishedDate =
+      GeneratedColumn<DateTime>(
+        'published_date',
+        aliasedName,
+        true,
+        type: DriftSqlType.dateTime,
+        requiredDuringInsert: false,
+      );
+  static const VerificationMeta _isDownloadedMeta = const VerificationMeta(
+    'isDownloaded',
+  );
+  @override
+  late final GeneratedColumn<bool> isDownloaded = GeneratedColumn<bool>(
+    'is_downloaded',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("is_downloaded" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -77,6 +179,15 @@ class $BooksTable extends Books with TableInfo<$BooksTable, Book> {
     coverPath,
     filePath,
     addedAt,
+    group,
+    isRead,
+    rating,
+    userNotes,
+    downloadUrl,
+    sourceMetadata,
+    language,
+    publishedDate,
+    isDownloaded,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -129,6 +240,72 @@ class $BooksTable extends Books with TableInfo<$BooksTable, Book> {
         addedAt.isAcceptableOrUnknown(data['added_at']!, _addedAtMeta),
       );
     }
+    if (data.containsKey('group')) {
+      context.handle(
+        _groupMeta,
+        group.isAcceptableOrUnknown(data['group']!, _groupMeta),
+      );
+    }
+    if (data.containsKey('is_read')) {
+      context.handle(
+        _isReadMeta,
+        isRead.isAcceptableOrUnknown(data['is_read']!, _isReadMeta),
+      );
+    }
+    if (data.containsKey('rating')) {
+      context.handle(
+        _ratingMeta,
+        rating.isAcceptableOrUnknown(data['rating']!, _ratingMeta),
+      );
+    }
+    if (data.containsKey('user_notes')) {
+      context.handle(
+        _userNotesMeta,
+        userNotes.isAcceptableOrUnknown(data['user_notes']!, _userNotesMeta),
+      );
+    }
+    if (data.containsKey('download_url')) {
+      context.handle(
+        _downloadUrlMeta,
+        downloadUrl.isAcceptableOrUnknown(
+          data['download_url']!,
+          _downloadUrlMeta,
+        ),
+      );
+    }
+    if (data.containsKey('source_metadata')) {
+      context.handle(
+        _sourceMetadataMeta,
+        sourceMetadata.isAcceptableOrUnknown(
+          data['source_metadata']!,
+          _sourceMetadataMeta,
+        ),
+      );
+    }
+    if (data.containsKey('language')) {
+      context.handle(
+        _languageMeta,
+        language.isAcceptableOrUnknown(data['language']!, _languageMeta),
+      );
+    }
+    if (data.containsKey('published_date')) {
+      context.handle(
+        _publishedDateMeta,
+        publishedDate.isAcceptableOrUnknown(
+          data['published_date']!,
+          _publishedDateMeta,
+        ),
+      );
+    }
+    if (data.containsKey('is_downloaded')) {
+      context.handle(
+        _isDownloadedMeta,
+        isDownloaded.isAcceptableOrUnknown(
+          data['is_downloaded']!,
+          _isDownloadedMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -162,6 +339,42 @@ class $BooksTable extends Books with TableInfo<$BooksTable, Book> {
         DriftSqlType.dateTime,
         data['${effectivePrefix}added_at'],
       )!,
+      group: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}group'],
+      ),
+      isRead: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_read'],
+      )!,
+      rating: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}rating'],
+      ),
+      userNotes: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}user_notes'],
+      ),
+      downloadUrl: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}download_url'],
+      ),
+      sourceMetadata: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_metadata'],
+      ),
+      language: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}language'],
+      ),
+      publishedDate: attachedDatabase.typeMapping.read(
+        DriftSqlType.dateTime,
+        data['${effectivePrefix}published_date'],
+      ),
+      isDownloaded: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}is_downloaded'],
+      )!,
     );
   }
 
@@ -178,6 +391,15 @@ class Book extends DataClass implements Insertable<Book> {
   final String? coverPath;
   final String filePath;
   final DateTime addedAt;
+  final String? group;
+  final bool isRead;
+  final int? rating;
+  final String? userNotes;
+  final String? downloadUrl;
+  final String? sourceMetadata;
+  final String? language;
+  final DateTime? publishedDate;
+  final bool isDownloaded;
   const Book({
     required this.id,
     required this.title,
@@ -185,6 +407,15 @@ class Book extends DataClass implements Insertable<Book> {
     this.coverPath,
     required this.filePath,
     required this.addedAt,
+    this.group,
+    required this.isRead,
+    this.rating,
+    this.userNotes,
+    this.downloadUrl,
+    this.sourceMetadata,
+    this.language,
+    this.publishedDate,
+    required this.isDownloaded,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -199,6 +430,29 @@ class Book extends DataClass implements Insertable<Book> {
     }
     map['file_path'] = Variable<String>(filePath);
     map['added_at'] = Variable<DateTime>(addedAt);
+    if (!nullToAbsent || group != null) {
+      map['group'] = Variable<String>(group);
+    }
+    map['is_read'] = Variable<bool>(isRead);
+    if (!nullToAbsent || rating != null) {
+      map['rating'] = Variable<int>(rating);
+    }
+    if (!nullToAbsent || userNotes != null) {
+      map['user_notes'] = Variable<String>(userNotes);
+    }
+    if (!nullToAbsent || downloadUrl != null) {
+      map['download_url'] = Variable<String>(downloadUrl);
+    }
+    if (!nullToAbsent || sourceMetadata != null) {
+      map['source_metadata'] = Variable<String>(sourceMetadata);
+    }
+    if (!nullToAbsent || language != null) {
+      map['language'] = Variable<String>(language);
+    }
+    if (!nullToAbsent || publishedDate != null) {
+      map['published_date'] = Variable<DateTime>(publishedDate);
+    }
+    map['is_downloaded'] = Variable<bool>(isDownloaded);
     return map;
   }
 
@@ -214,6 +468,29 @@ class Book extends DataClass implements Insertable<Book> {
           : Value(coverPath),
       filePath: Value(filePath),
       addedAt: Value(addedAt),
+      group: group == null && nullToAbsent
+          ? const Value.absent()
+          : Value(group),
+      isRead: Value(isRead),
+      rating: rating == null && nullToAbsent
+          ? const Value.absent()
+          : Value(rating),
+      userNotes: userNotes == null && nullToAbsent
+          ? const Value.absent()
+          : Value(userNotes),
+      downloadUrl: downloadUrl == null && nullToAbsent
+          ? const Value.absent()
+          : Value(downloadUrl),
+      sourceMetadata: sourceMetadata == null && nullToAbsent
+          ? const Value.absent()
+          : Value(sourceMetadata),
+      language: language == null && nullToAbsent
+          ? const Value.absent()
+          : Value(language),
+      publishedDate: publishedDate == null && nullToAbsent
+          ? const Value.absent()
+          : Value(publishedDate),
+      isDownloaded: Value(isDownloaded),
     );
   }
 
@@ -229,6 +506,15 @@ class Book extends DataClass implements Insertable<Book> {
       coverPath: serializer.fromJson<String?>(json['coverPath']),
       filePath: serializer.fromJson<String>(json['filePath']),
       addedAt: serializer.fromJson<DateTime>(json['addedAt']),
+      group: serializer.fromJson<String?>(json['group']),
+      isRead: serializer.fromJson<bool>(json['isRead']),
+      rating: serializer.fromJson<int?>(json['rating']),
+      userNotes: serializer.fromJson<String?>(json['userNotes']),
+      downloadUrl: serializer.fromJson<String?>(json['downloadUrl']),
+      sourceMetadata: serializer.fromJson<String?>(json['sourceMetadata']),
+      language: serializer.fromJson<String?>(json['language']),
+      publishedDate: serializer.fromJson<DateTime?>(json['publishedDate']),
+      isDownloaded: serializer.fromJson<bool>(json['isDownloaded']),
     );
   }
   @override
@@ -241,6 +527,15 @@ class Book extends DataClass implements Insertable<Book> {
       'coverPath': serializer.toJson<String?>(coverPath),
       'filePath': serializer.toJson<String>(filePath),
       'addedAt': serializer.toJson<DateTime>(addedAt),
+      'group': serializer.toJson<String?>(group),
+      'isRead': serializer.toJson<bool>(isRead),
+      'rating': serializer.toJson<int?>(rating),
+      'userNotes': serializer.toJson<String?>(userNotes),
+      'downloadUrl': serializer.toJson<String?>(downloadUrl),
+      'sourceMetadata': serializer.toJson<String?>(sourceMetadata),
+      'language': serializer.toJson<String?>(language),
+      'publishedDate': serializer.toJson<DateTime?>(publishedDate),
+      'isDownloaded': serializer.toJson<bool>(isDownloaded),
     };
   }
 
@@ -251,6 +546,15 @@ class Book extends DataClass implements Insertable<Book> {
     Value<String?> coverPath = const Value.absent(),
     String? filePath,
     DateTime? addedAt,
+    Value<String?> group = const Value.absent(),
+    bool? isRead,
+    Value<int?> rating = const Value.absent(),
+    Value<String?> userNotes = const Value.absent(),
+    Value<String?> downloadUrl = const Value.absent(),
+    Value<String?> sourceMetadata = const Value.absent(),
+    Value<String?> language = const Value.absent(),
+    Value<DateTime?> publishedDate = const Value.absent(),
+    bool? isDownloaded,
   }) => Book(
     id: id ?? this.id,
     title: title ?? this.title,
@@ -258,6 +562,19 @@ class Book extends DataClass implements Insertable<Book> {
     coverPath: coverPath.present ? coverPath.value : this.coverPath,
     filePath: filePath ?? this.filePath,
     addedAt: addedAt ?? this.addedAt,
+    group: group.present ? group.value : this.group,
+    isRead: isRead ?? this.isRead,
+    rating: rating.present ? rating.value : this.rating,
+    userNotes: userNotes.present ? userNotes.value : this.userNotes,
+    downloadUrl: downloadUrl.present ? downloadUrl.value : this.downloadUrl,
+    sourceMetadata: sourceMetadata.present
+        ? sourceMetadata.value
+        : this.sourceMetadata,
+    language: language.present ? language.value : this.language,
+    publishedDate: publishedDate.present
+        ? publishedDate.value
+        : this.publishedDate,
+    isDownloaded: isDownloaded ?? this.isDownloaded,
   );
   Book copyWithCompanion(BooksCompanion data) {
     return Book(
@@ -267,6 +584,23 @@ class Book extends DataClass implements Insertable<Book> {
       coverPath: data.coverPath.present ? data.coverPath.value : this.coverPath,
       filePath: data.filePath.present ? data.filePath.value : this.filePath,
       addedAt: data.addedAt.present ? data.addedAt.value : this.addedAt,
+      group: data.group.present ? data.group.value : this.group,
+      isRead: data.isRead.present ? data.isRead.value : this.isRead,
+      rating: data.rating.present ? data.rating.value : this.rating,
+      userNotes: data.userNotes.present ? data.userNotes.value : this.userNotes,
+      downloadUrl: data.downloadUrl.present
+          ? data.downloadUrl.value
+          : this.downloadUrl,
+      sourceMetadata: data.sourceMetadata.present
+          ? data.sourceMetadata.value
+          : this.sourceMetadata,
+      language: data.language.present ? data.language.value : this.language,
+      publishedDate: data.publishedDate.present
+          ? data.publishedDate.value
+          : this.publishedDate,
+      isDownloaded: data.isDownloaded.present
+          ? data.isDownloaded.value
+          : this.isDownloaded,
     );
   }
 
@@ -278,14 +612,38 @@ class Book extends DataClass implements Insertable<Book> {
           ..write('author: $author, ')
           ..write('coverPath: $coverPath, ')
           ..write('filePath: $filePath, ')
-          ..write('addedAt: $addedAt')
+          ..write('addedAt: $addedAt, ')
+          ..write('group: $group, ')
+          ..write('isRead: $isRead, ')
+          ..write('rating: $rating, ')
+          ..write('userNotes: $userNotes, ')
+          ..write('downloadUrl: $downloadUrl, ')
+          ..write('sourceMetadata: $sourceMetadata, ')
+          ..write('language: $language, ')
+          ..write('publishedDate: $publishedDate, ')
+          ..write('isDownloaded: $isDownloaded')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode =>
-      Object.hash(id, title, author, coverPath, filePath, addedAt);
+  int get hashCode => Object.hash(
+    id,
+    title,
+    author,
+    coverPath,
+    filePath,
+    addedAt,
+    group,
+    isRead,
+    rating,
+    userNotes,
+    downloadUrl,
+    sourceMetadata,
+    language,
+    publishedDate,
+    isDownloaded,
+  );
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -295,7 +653,16 @@ class Book extends DataClass implements Insertable<Book> {
           other.author == this.author &&
           other.coverPath == this.coverPath &&
           other.filePath == this.filePath &&
-          other.addedAt == this.addedAt);
+          other.addedAt == this.addedAt &&
+          other.group == this.group &&
+          other.isRead == this.isRead &&
+          other.rating == this.rating &&
+          other.userNotes == this.userNotes &&
+          other.downloadUrl == this.downloadUrl &&
+          other.sourceMetadata == this.sourceMetadata &&
+          other.language == this.language &&
+          other.publishedDate == this.publishedDate &&
+          other.isDownloaded == this.isDownloaded);
 }
 
 class BooksCompanion extends UpdateCompanion<Book> {
@@ -305,6 +672,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
   final Value<String?> coverPath;
   final Value<String> filePath;
   final Value<DateTime> addedAt;
+  final Value<String?> group;
+  final Value<bool> isRead;
+  final Value<int?> rating;
+  final Value<String?> userNotes;
+  final Value<String?> downloadUrl;
+  final Value<String?> sourceMetadata;
+  final Value<String?> language;
+  final Value<DateTime?> publishedDate;
+  final Value<bool> isDownloaded;
   final Value<int> rowid;
   const BooksCompanion({
     this.id = const Value.absent(),
@@ -313,6 +689,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
     this.coverPath = const Value.absent(),
     this.filePath = const Value.absent(),
     this.addedAt = const Value.absent(),
+    this.group = const Value.absent(),
+    this.isRead = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.userNotes = const Value.absent(),
+    this.downloadUrl = const Value.absent(),
+    this.sourceMetadata = const Value.absent(),
+    this.language = const Value.absent(),
+    this.publishedDate = const Value.absent(),
+    this.isDownloaded = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   BooksCompanion.insert({
@@ -322,6 +707,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
     this.coverPath = const Value.absent(),
     required String filePath,
     this.addedAt = const Value.absent(),
+    this.group = const Value.absent(),
+    this.isRead = const Value.absent(),
+    this.rating = const Value.absent(),
+    this.userNotes = const Value.absent(),
+    this.downloadUrl = const Value.absent(),
+    this.sourceMetadata = const Value.absent(),
+    this.language = const Value.absent(),
+    this.publishedDate = const Value.absent(),
+    this.isDownloaded = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        title = Value(title),
@@ -333,6 +727,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
     Expression<String>? coverPath,
     Expression<String>? filePath,
     Expression<DateTime>? addedAt,
+    Expression<String>? group,
+    Expression<bool>? isRead,
+    Expression<int>? rating,
+    Expression<String>? userNotes,
+    Expression<String>? downloadUrl,
+    Expression<String>? sourceMetadata,
+    Expression<String>? language,
+    Expression<DateTime>? publishedDate,
+    Expression<bool>? isDownloaded,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -342,6 +745,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
       if (coverPath != null) 'cover_path': coverPath,
       if (filePath != null) 'file_path': filePath,
       if (addedAt != null) 'added_at': addedAt,
+      if (group != null) 'group': group,
+      if (isRead != null) 'is_read': isRead,
+      if (rating != null) 'rating': rating,
+      if (userNotes != null) 'user_notes': userNotes,
+      if (downloadUrl != null) 'download_url': downloadUrl,
+      if (sourceMetadata != null) 'source_metadata': sourceMetadata,
+      if (language != null) 'language': language,
+      if (publishedDate != null) 'published_date': publishedDate,
+      if (isDownloaded != null) 'is_downloaded': isDownloaded,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -353,6 +765,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
     Value<String?>? coverPath,
     Value<String>? filePath,
     Value<DateTime>? addedAt,
+    Value<String?>? group,
+    Value<bool>? isRead,
+    Value<int?>? rating,
+    Value<String?>? userNotes,
+    Value<String?>? downloadUrl,
+    Value<String?>? sourceMetadata,
+    Value<String?>? language,
+    Value<DateTime?>? publishedDate,
+    Value<bool>? isDownloaded,
     Value<int>? rowid,
   }) {
     return BooksCompanion(
@@ -362,6 +783,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
       coverPath: coverPath ?? this.coverPath,
       filePath: filePath ?? this.filePath,
       addedAt: addedAt ?? this.addedAt,
+      group: group ?? this.group,
+      isRead: isRead ?? this.isRead,
+      rating: rating ?? this.rating,
+      userNotes: userNotes ?? this.userNotes,
+      downloadUrl: downloadUrl ?? this.downloadUrl,
+      sourceMetadata: sourceMetadata ?? this.sourceMetadata,
+      language: language ?? this.language,
+      publishedDate: publishedDate ?? this.publishedDate,
+      isDownloaded: isDownloaded ?? this.isDownloaded,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -387,6 +817,33 @@ class BooksCompanion extends UpdateCompanion<Book> {
     if (addedAt.present) {
       map['added_at'] = Variable<DateTime>(addedAt.value);
     }
+    if (group.present) {
+      map['group'] = Variable<String>(group.value);
+    }
+    if (isRead.present) {
+      map['is_read'] = Variable<bool>(isRead.value);
+    }
+    if (rating.present) {
+      map['rating'] = Variable<int>(rating.value);
+    }
+    if (userNotes.present) {
+      map['user_notes'] = Variable<String>(userNotes.value);
+    }
+    if (downloadUrl.present) {
+      map['download_url'] = Variable<String>(downloadUrl.value);
+    }
+    if (sourceMetadata.present) {
+      map['source_metadata'] = Variable<String>(sourceMetadata.value);
+    }
+    if (language.present) {
+      map['language'] = Variable<String>(language.value);
+    }
+    if (publishedDate.present) {
+      map['published_date'] = Variable<DateTime>(publishedDate.value);
+    }
+    if (isDownloaded.present) {
+      map['is_downloaded'] = Variable<bool>(isDownloaded.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -402,6 +859,15 @@ class BooksCompanion extends UpdateCompanion<Book> {
           ..write('coverPath: $coverPath, ')
           ..write('filePath: $filePath, ')
           ..write('addedAt: $addedAt, ')
+          ..write('group: $group, ')
+          ..write('isRead: $isRead, ')
+          ..write('rating: $rating, ')
+          ..write('userNotes: $userNotes, ')
+          ..write('downloadUrl: $downloadUrl, ')
+          ..write('sourceMetadata: $sourceMetadata, ')
+          ..write('language: $language, ')
+          ..write('publishedDate: $publishedDate, ')
+          ..write('isDownloaded: $isDownloaded, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -1639,6 +2105,15 @@ typedef $$BooksTableCreateCompanionBuilder =
       Value<String?> coverPath,
       required String filePath,
       Value<DateTime> addedAt,
+      Value<String?> group,
+      Value<bool> isRead,
+      Value<int?> rating,
+      Value<String?> userNotes,
+      Value<String?> downloadUrl,
+      Value<String?> sourceMetadata,
+      Value<String?> language,
+      Value<DateTime?> publishedDate,
+      Value<bool> isDownloaded,
       Value<int> rowid,
     });
 typedef $$BooksTableUpdateCompanionBuilder =
@@ -1649,6 +2124,15 @@ typedef $$BooksTableUpdateCompanionBuilder =
       Value<String?> coverPath,
       Value<String> filePath,
       Value<DateTime> addedAt,
+      Value<String?> group,
+      Value<bool> isRead,
+      Value<int?> rating,
+      Value<String?> userNotes,
+      Value<String?> downloadUrl,
+      Value<String?> sourceMetadata,
+      Value<String?> language,
+      Value<DateTime?> publishedDate,
+      Value<bool> isDownloaded,
       Value<int> rowid,
     });
 
@@ -1749,6 +2233,51 @@ class $$BooksTableFilterComposer extends Composer<_$AppDatabase, $BooksTable> {
 
   ColumnFilters<DateTime> get addedAt => $composableBuilder(
     column: $table.addedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get group => $composableBuilder(
+    column: $table.group,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isRead => $composableBuilder(
+    column: $table.isRead,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get userNotes => $composableBuilder(
+    column: $table.userNotes,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get downloadUrl => $composableBuilder(
+    column: $table.downloadUrl,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceMetadata => $composableBuilder(
+    column: $table.sourceMetadata,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<DateTime> get publishedDate => $composableBuilder(
+    column: $table.publishedDate,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get isDownloaded => $composableBuilder(
+    column: $table.isDownloaded,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -1866,6 +2395,51 @@ class $$BooksTableOrderingComposer
     column: $table.addedAt,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<String> get group => $composableBuilder(
+    column: $table.group,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isRead => $composableBuilder(
+    column: $table.isRead,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get rating => $composableBuilder(
+    column: $table.rating,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get userNotes => $composableBuilder(
+    column: $table.userNotes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get downloadUrl => $composableBuilder(
+    column: $table.downloadUrl,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceMetadata => $composableBuilder(
+    column: $table.sourceMetadata,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get language => $composableBuilder(
+    column: $table.language,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<DateTime> get publishedDate => $composableBuilder(
+    column: $table.publishedDate,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get isDownloaded => $composableBuilder(
+    column: $table.isDownloaded,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$BooksTableAnnotationComposer
@@ -1894,6 +2468,41 @@ class $$BooksTableAnnotationComposer
 
   GeneratedColumn<DateTime> get addedAt =>
       $composableBuilder(column: $table.addedAt, builder: (column) => column);
+
+  GeneratedColumn<String> get group =>
+      $composableBuilder(column: $table.group, builder: (column) => column);
+
+  GeneratedColumn<bool> get isRead =>
+      $composableBuilder(column: $table.isRead, builder: (column) => column);
+
+  GeneratedColumn<int> get rating =>
+      $composableBuilder(column: $table.rating, builder: (column) => column);
+
+  GeneratedColumn<String> get userNotes =>
+      $composableBuilder(column: $table.userNotes, builder: (column) => column);
+
+  GeneratedColumn<String> get downloadUrl => $composableBuilder(
+    column: $table.downloadUrl,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get sourceMetadata => $composableBuilder(
+    column: $table.sourceMetadata,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get language =>
+      $composableBuilder(column: $table.language, builder: (column) => column);
+
+  GeneratedColumn<DateTime> get publishedDate => $composableBuilder(
+    column: $table.publishedDate,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<bool> get isDownloaded => $composableBuilder(
+    column: $table.isDownloaded,
+    builder: (column) => column,
+  );
 
   Expression<T> readingProgressRefs<T extends Object>(
     Expression<T> Function($$ReadingProgressTableAnnotationComposer a) f,
@@ -2009,6 +2618,15 @@ class $$BooksTableTableManager
                 Value<String?> coverPath = const Value.absent(),
                 Value<String> filePath = const Value.absent(),
                 Value<DateTime> addedAt = const Value.absent(),
+                Value<String?> group = const Value.absent(),
+                Value<bool> isRead = const Value.absent(),
+                Value<int?> rating = const Value.absent(),
+                Value<String?> userNotes = const Value.absent(),
+                Value<String?> downloadUrl = const Value.absent(),
+                Value<String?> sourceMetadata = const Value.absent(),
+                Value<String?> language = const Value.absent(),
+                Value<DateTime?> publishedDate = const Value.absent(),
+                Value<bool> isDownloaded = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BooksCompanion(
                 id: id,
@@ -2017,6 +2635,15 @@ class $$BooksTableTableManager
                 coverPath: coverPath,
                 filePath: filePath,
                 addedAt: addedAt,
+                group: group,
+                isRead: isRead,
+                rating: rating,
+                userNotes: userNotes,
+                downloadUrl: downloadUrl,
+                sourceMetadata: sourceMetadata,
+                language: language,
+                publishedDate: publishedDate,
+                isDownloaded: isDownloaded,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -2027,6 +2654,15 @@ class $$BooksTableTableManager
                 Value<String?> coverPath = const Value.absent(),
                 required String filePath,
                 Value<DateTime> addedAt = const Value.absent(),
+                Value<String?> group = const Value.absent(),
+                Value<bool> isRead = const Value.absent(),
+                Value<int?> rating = const Value.absent(),
+                Value<String?> userNotes = const Value.absent(),
+                Value<String?> downloadUrl = const Value.absent(),
+                Value<String?> sourceMetadata = const Value.absent(),
+                Value<String?> language = const Value.absent(),
+                Value<DateTime?> publishedDate = const Value.absent(),
+                Value<bool> isDownloaded = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => BooksCompanion.insert(
                 id: id,
@@ -2035,6 +2671,15 @@ class $$BooksTableTableManager
                 coverPath: coverPath,
                 filePath: filePath,
                 addedAt: addedAt,
+                group: group,
+                isRead: isRead,
+                rating: rating,
+                userNotes: userNotes,
+                downloadUrl: downloadUrl,
+                sourceMetadata: sourceMetadata,
+                language: language,
+                publishedDate: publishedDate,
+                isDownloaded: isDownloaded,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

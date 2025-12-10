@@ -8,169 +8,133 @@ import 'dart:io';
 import 'reader_screen.dart';
 import '../providers.dart';
 
-class HighlightsScreen extends ConsumerStatefulWidget {
-  const HighlightsScreen({super.key});
+class HighlightsTab extends ConsumerWidget {
+  final String searchQuery;
+  final String? bookId;
+  final String? author;
+
+  const HighlightsTab({
+    super.key,
+    required this.searchQuery,
+    this.bookId,
+    this.author,
+  });
 
   @override
-  ConsumerState<HighlightsScreen> createState() => _HighlightsScreenState();
-}
-
-class _HighlightsScreenState extends ConsumerState<HighlightsScreen> {
-  final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
-
-  @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final charRepo = ref.watch(characterRepositoryProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            SvgPicture.asset('assets/icon.svg', height: 24),
-            const SizedBox(width: 8),
-            const Text('Highlights'),
-          ],
-        ),
+    return StreamBuilder<List<QuoteWithBook>>(
+      stream: charRepo.watchAllQuotesWithBooks(
+        searchQuery,
+        bookId: bookId,
+        author: author,
       ),
-      body: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search highlights & notes...',
-                filled: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(30),
-                  borderSide: BorderSide.none,
-                ),
-                prefixIcon: const Icon(Icons.search),
-              ),
-              onChanged: (value) {
-                setState(() {
-                  _searchQuery = value;
-                });
-              },
-            ),
-          ),
-          Expanded(
-            child: StreamBuilder<List<QuoteWithBook>>(
-              stream: charRepo.watchAllQuotesWithBooks(_searchQuery),
-              builder: (context, snapshot) {
-                if (snapshot.hasError) {
-                  return Center(child: Text('Error: ${snapshot.error}'));
-                }
-                if (!snapshot.hasData) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-                final quotes = snapshot.data!;
-                if (quotes.isEmpty) {
-                  return Center(
-                    child: Text(
-                      _searchQuery.isEmpty
-                          ? 'No highlights yet.'
-                          : 'No matches found.',
-                      style: Theme.of(context).textTheme.bodyLarge,
+        final quotes = snapshot.data!;
+        if (quotes.isEmpty) {
+          return Center(
+            child: Text(
+              searchQuery.isEmpty ? 'No highlights yet.' : 'No matches found.',
+              style: Theme.of(context).textTheme.bodyLarge,
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: quotes.length,
+          itemBuilder: (context, index) {
+            final item = quotes[index];
+            return InkWell(
+              onTap: () => _showHighlightDetails(context, ref, item),
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 16),
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).cardColor,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
                     ),
-                  );
-                }
-
-                return ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: quotes.length,
-                  itemBuilder: (context, index) {
-                    final item = quotes[index];
-                    return InkWell(
-                      onTap: () => _showHighlightDetails(context, item),
-                      child: Container(
-                        margin: const EdgeInsets.only(bottom: 16),
-                        padding: const EdgeInsets.all(16),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).cardColor,
-                          borderRadius: BorderRadius.circular(12),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 4,
-                              offset: const Offset(0, 2),
-                            ),
-                          ],
+                  ],
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          width: 4,
+                          height: 40,
+                          color: Theme.of(
+                            context,
+                          ).primaryColor, // Highlight color
+                          margin: const EdgeInsets.only(right: 12),
                         ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Container(
-                                  width: 4,
-                                  height: 40,
-                                  color: Theme.of(
-                                    context,
-                                  ).primaryColor, // Highlight color
-                                  margin: const EdgeInsets.only(right: 12),
-                                ),
-                                Expanded(
-                                  child: Text(
-                                    '"${item.quote.textContent}"',
-                                    style: const TextStyle(
-                                      fontSize: 14, // Smaller font
-                                      // No italics
-                                    ),
-                                    maxLines: 3,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ],
+                        Expanded(
+                          child: Text(
+                            '"${item.quote.textContent}"',
+                            style: const TextStyle(
+                              fontSize: 14, // Smaller font
+                              // No italics
                             ),
-                            const SizedBox(height: 12),
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.book,
-                                  size: 16,
-                                  color: Colors.grey,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    item.book.title,
-                                    style: const TextStyle(
-                                      color: Colors.grey,
-                                      fontSize: 12,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Text(
-                                  DateFormat.yMMMd().format(
-                                    item.quote.createdAt,
-                                  ),
-                                  style: const TextStyle(
-                                    color: Colors.grey,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                    );
-                  },
-                );
-              },
-            ),
-          ),
-        ],
-      ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        const Icon(Icons.book, size: 16, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            item.book.title,
+                            style: const TextStyle(
+                              color: Colors.grey,
+                              fontSize: 12,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          DateFormat.yMMMd().format(item.quote.createdAt),
+                          style: const TextStyle(
+                            color: Colors.grey,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
-  void _showHighlightDetails(BuildContext context, QuoteWithBook item) {
+  void _showHighlightDetails(
+    BuildContext context,
+    WidgetRef ref,
+    QuoteWithBook item,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -217,7 +181,7 @@ class _HighlightsScreenState extends ConsumerState<HighlightsScreen> {
                     child: OutlinedButton.icon(
                       onPressed: () {
                         Navigator.pop(context); // Close modal
-                        _showAssignCharacterDialog(context, item);
+                        _showAssignCharacterDialog(context, ref, item);
                       },
                       icon: const Icon(Icons.person_add),
                       label: const Text('Assign Character'),
@@ -271,7 +235,11 @@ class _HighlightsScreenState extends ConsumerState<HighlightsScreen> {
     );
   }
 
-  void _showAssignCharacterDialog(BuildContext context, QuoteWithBook item) {
+  void _showAssignCharacterDialog(
+    BuildContext context,
+    WidgetRef ref,
+    QuoteWithBook item,
+  ) {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(

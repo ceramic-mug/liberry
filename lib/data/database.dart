@@ -15,6 +15,18 @@ class Books extends Table {
   TextColumn get filePath => text()();
   DateTimeColumn get addedAt => dateTime().withDefault(currentDateAndTime)();
 
+  // New columns for Library v2
+  TextColumn get group =>
+      text().nullable()(); // 'reading' or 'bookshelf' (null = default/reading)
+  BoolColumn get isRead => boolean().withDefault(const Constant(false))();
+  IntColumn get rating => integer().nullable()(); // 0-5
+  TextColumn get userNotes => text().nullable()();
+  TextColumn get downloadUrl => text().nullable()();
+  TextColumn get sourceMetadata => text().nullable()();
+  TextColumn get language => text().nullable()();
+  DateTimeColumn get publishedDate => dateTime().nullable()();
+  BoolColumn get isDownloaded => boolean().withDefault(const Constant(true))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -61,7 +73,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 4; // Increment schema version
+  int get schemaVersion => 5; // Updated to 5
 
   @override
   MigrationStrategy get migration {
@@ -89,10 +101,6 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(quotes);
 
           // 3. Copy data from old table to new table
-          // Note: We need to handle the case where character_id might be missing in old data if we just select all.
-          // But since old schema had it as NOT NULL (presumably), it should be there.
-          // However, if we are inserting new data with NULL, we want the new table to allow it.
-          // The copy should work fine.
           await m.issueCustomQuery(
             'INSERT INTO quotes (id, text_content, book_id, character_id, cfi, created_at) '
             'SELECT id, text_content, book_id, character_id, cfi, created_at FROM quotes_old',
@@ -100,6 +108,18 @@ class AppDatabase extends _$AppDatabase {
 
           // 4. Drop old table
           await m.issueCustomQuery('DROP TABLE quotes_old');
+        }
+        if (from < 5) {
+          // Add new columns to Books table
+          await m.addColumn(books, books.group);
+          await m.addColumn(books, books.isRead);
+          await m.addColumn(books, books.rating);
+          await m.addColumn(books, books.userNotes);
+          await m.addColumn(books, books.downloadUrl);
+          await m.addColumn(books, books.sourceMetadata);
+          await m.addColumn(books, books.language);
+          await m.addColumn(books, books.publishedDate);
+          await m.addColumn(books, books.isDownloaded);
         }
       },
     );

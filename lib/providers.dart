@@ -25,7 +25,10 @@ final dioProvider = Provider<Dio>((ref) {
 });
 
 final opdsServiceProvider = Provider<OpdsService>((ref) {
-  return OpdsService(ref.read(dioProvider));
+  final service = OpdsService(ref.read(dioProvider));
+  // TODO: Move to secure storage or settings
+  service.setCredentials('joshua.h.eastman@gmail.com', 'IxThYstaE4984');
+  return service;
 });
 
 final gutendexServiceProvider = Provider<GutendexService>((ref) {

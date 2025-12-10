@@ -83,13 +83,31 @@ class CharacterRepository {
     )..where((t) => t.characterId.equals(characterId))).watch();
   }
 
-  Stream<List<QuoteWithBook>> watchAllQuotesWithBooks(String query) {
-    final joinedQuery =
-        (_db.select(
-          _db.quotes,
-        )..where((t) => t.textContent.contains(query))).join([
-          innerJoin(_db.books, _db.books.id.equalsExp(_db.quotes.bookId)),
-        ]);
+  Stream<List<QuoteWithBook>> watchAllQuotesWithBooks(
+    String query, {
+    String? bookId,
+    String? author,
+  }) {
+    final queryLower = query.toLowerCase();
+
+    // Start with a join
+    final joinedQuery = (_db.select(_db.quotes).join([
+      innerJoin(_db.books, _db.books.id.equalsExp(_db.quotes.bookId)),
+    ]));
+
+    // Apply filters
+    joinedQuery.where(
+      _db.quotes.textContent.lower().contains(queryLower) |
+          _db.books.title.lower().contains(queryLower),
+    );
+
+    if (bookId != null) {
+      joinedQuery.where(_db.quotes.bookId.equals(bookId));
+    }
+
+    if (author != null) {
+      joinedQuery.where(_db.books.author.equals(author));
+    }
 
     joinedQuery.orderBy([OrderingTerm(expression: _db.books.title)]);
 
@@ -102,6 +120,46 @@ class CharacterRepository {
       }).toList();
     });
   }
+
+  Stream<List<CharacterWithBook>> watchCharactersWithFilteredBooks(
+    String query, {
+    String? bookId,
+    String? author,
+  }) {
+    final queryLower = query.toLowerCase();
+
+    // Join Characters with Books to allow filtering by book/author
+    final joinedQuery = _db.select(_db.characters).join([
+      innerJoin(_db.books, _db.books.id.equalsExp(_db.characters.originBookId)),
+    ]);
+
+    // Apply text search filter (Name or Bio)
+    joinedQuery.where(
+      _db.characters.name.lower().contains(queryLower) |
+          _db.characters.bio.lower().contains(queryLower),
+    );
+
+    // Apply Book ID Filter
+    if (bookId != null) {
+      joinedQuery.where(_db.characters.originBookId.equals(bookId));
+    }
+
+    // Apply Author Filter
+    if (author != null) {
+      joinedQuery.where(_db.books.author.equals(author));
+    }
+
+    joinedQuery.orderBy([OrderingTerm(expression: _db.characters.name)]);
+
+    return joinedQuery.watch().map((rows) {
+      return rows.map((row) {
+        return CharacterWithBook(
+          row.readTable(_db.characters),
+          row.readTable(_db.books),
+        );
+      }).toList();
+    });
+  }
 }
 
 class QuoteWithBook {
@@ -109,4 +167,11 @@ class QuoteWithBook {
   final Book book;
 
   QuoteWithBook(this.quote, this.book);
+}
+
+class CharacterWithBook {
+  final Character character;
+  final Book book;
+
+  CharacterWithBook(this.character, this.book);
 }

@@ -204,6 +204,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     setState(() {
       _currentChapterIndex = index;
+      _showControls = false; // Auto-hide controls on chapter change
     });
 
     try {

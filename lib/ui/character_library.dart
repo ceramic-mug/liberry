@@ -2,45 +2,51 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../data/database.dart';
+import '../data/character_repository.dart';
 import '../providers.dart';
 
-class CharacterLibraryScreen extends ConsumerWidget {
-  const CharacterLibraryScreen({super.key});
+class CharactersTab extends ConsumerWidget {
+  final String searchQuery;
+  final String? bookId;
+  final String? author;
+
+  const CharactersTab({
+    super.key,
+    required this.searchQuery,
+    this.bookId,
+    this.author,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final charRepo = ref.watch(characterRepositoryProvider);
-    final charactersStream = charRepo.watchAllCharacters();
+    final charactersStream = charRepo.watchCharactersWithFilteredBooks(
+      searchQuery,
+      bookId: bookId,
+      author: author,
+    );
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Row(
-          children: [
-            SvgPicture.asset('assets/icon.svg', height: 24),
-            const SizedBox(width: 8),
-            const Text('Characters'),
-          ],
-        ),
-      ),
-      body: StreamBuilder<List<Character>>(
-        stream: charactersStream,
-        builder: (context, snapshot) {
-          if (snapshot.hasError) {
-            return Center(child: Text('Error: ${snapshot.error}'));
-          }
-          if (!snapshot.hasData) {
-            return const Center(child: CircularProgressIndicator());
-          }
+    return StreamBuilder<List<CharacterWithBook>>(
+      stream: charactersStream,
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(child: Text('Error: ${snapshot.error}'));
+        }
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
 
-          final characters = snapshot.data!;
-          if (characters.isEmpty) {
-            return const Center(child: Text('No characters yet.'));
-          }
+        final data = snapshot.data!;
+        if (data.isEmpty) {
+          return const Center(child: Text('No characters found.'));
+        }
 
-          return ListView.builder(
-            itemCount: characters.length,
+        return Scaffold(
+          body: ListView.builder(
+            itemCount: data.length,
             itemBuilder: (context, index) {
-              final character = characters[index];
+              final item = data[index];
+              final character = item.character;
               return ListTile(
                 title: Text(character.name),
                 subtitle: Text(character.bio ?? 'No bio'),
@@ -56,25 +62,21 @@ class CharacterLibraryScreen extends ConsumerWidget {
                 },
               );
             },
-          );
-        },
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          _showAddCharacterDialog(context, ref);
-        },
-        child: const Icon(Icons.add),
-      ),
+          ),
+          floatingActionButton: FloatingActionButton(
+            onPressed: () {
+              _showAddCharacterDialog(context, ref);
+            },
+            child: const Icon(Icons.add),
+          ),
+        );
+      },
     );
   }
 
   void _showAddCharacterDialog(BuildContext context, WidgetRef ref) {
     final nameController = TextEditingController();
     final bioController = TextEditingController();
-
-    // For now, we need a book ID. Let's just pick the first book or ask user.
-    // To keep it simple for MVP, we'll fetch books and let user pick or auto-pick.
-    // Actually, let's just use a dummy ID or fetch books.
 
     showDialog(
       context: context,
@@ -104,13 +106,6 @@ class CharacterLibraryScreen extends ConsumerWidget {
                 final name = nameController.text;
                 if (name.isNotEmpty) {
                   // Hack: Just use a placeholder book ID for now if no books.
-                  // Ideally we select a book.
-                  // Let's fetch books first in the dialog or parent.
-                  // For speed, let's just pass "unknown" or handle it.
-                  // But FK constraint might fail if "unknown" doesn't exist.
-                  // We need a valid book ID.
-
-                  // Let's get the first book from repo.
                   final bookRepo = ref.read(bookRepositoryProvider);
                   final books = await bookRepo.watchAllBooks().first;
 
@@ -118,8 +113,6 @@ class CharacterLibraryScreen extends ConsumerWidget {
                   if (books.isNotEmpty) {
                     bookId = books.first.id;
                   } else {
-                    // Create a dummy book or error?
-                    // Let's just return for now.
                     if (!context.mounted) return;
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(content: Text('Add a book first!')),
@@ -249,12 +242,6 @@ class CharacterDetailScreen extends ConsumerWidget {
             TextButton(
               onPressed: () async {
                 if (textController.text.isNotEmpty) {
-                  // We need a book ID. Ideally we know which book the user was just reading.
-                  // For now, let's pick the first book or "unknown".
-                  // A better way: Store "last read book" in a provider.
-                  // For MVP, let's just fetch the first book again or use the character's origin book.
-                  // Let's use character's origin book for now as a default.
-
                   final char = await ref
                       .read(characterRepositoryProvider)
                       .getCharacter(characterId);

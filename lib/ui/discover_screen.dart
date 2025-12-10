@@ -1,7 +1,13 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../data/remote/remote_book.dart';
+import '../data/harvard_classics.dart';
+import 'collections_screen.dart';
+import 'gutenberg_screen.dart';
+import 'opds_catalog_screen.dart';
+
 import '../providers.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
@@ -24,7 +30,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   @override
   void initState() {
     super.initState();
-    _loadStandardEbooks();
+    // Intentionally empty - we don't auto-load content anymore per user request
   }
 
   Future<void> _loadStandardEbooks() async {
@@ -109,16 +115,14 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     }
   }
 
-  List<RemoteBook> get _filteredStandardEbooks {
-    // If we are searching, _standardEbooks already contains the search results
-    // If not searching, it contains new releases
-    return _standardEbooks;
+  void _searchHarvardClassic(HarvardClassic classic) {
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    _searchController.text = '${classic.author} ${classic.title}';
+    _search();
   }
 
   @override
   Widget build(BuildContext context) {
-    final filteredStandard = _filteredStandardEbooks;
-
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -159,31 +163,233 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
             child: ListView(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               children: [
-                // Standard Ebooks Section
-                if (_isLoadingStandard)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: CircularProgressIndicator(),
+                if (_searchQuery.isEmpty) ...[
+                  // Standard Ebooks Button
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    elevation: 0,
+                    color: Colors.blue.shade50.withOpacity(
+                      0.5,
+                    ), // Subtle blue tint
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                  )
-                else if (filteredStandard.isNotEmpty) ...[
-                  _buildSectionHeader(
-                    'Standard Ebooks',
-                    'High quality, carefully formatted',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const OpdsCatalogScreen(
+                              title: 'Standard Ebooks',
+                              showStandardEbooksTabs: true,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.book_outlined,
+                              size: 28,
+                              color: Colors.blue.shade800,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Standard Ebooks',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Browse the collection',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withOpacity(0.7),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  ...filteredStandard.map(
-                    (book) => RemoteBookTile(book: book, isStandardEbook: true),
+
+                  // Project Gutenberg Button
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 16),
+                    elevation: 0,
+                    color: Colors.orange.shade50.withOpacity(0.5),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const GutenbergScreen(),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.library_books_outlined,
+                              size: 28,
+                              color: Colors.orange.shade800,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Project Gutenberg',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    ),
+                                  ),
+                                  Text(
+                                    '60,000+ free ebooks',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withOpacity(0.7),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
-                  const SizedBox(height: 24),
+
+                  // Collections Button
+                  Card(
+                    margin: const EdgeInsets.only(bottom: 24),
+                    elevation: 0,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.secondaryContainer.withOpacity(0.4),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => CollectionsScreen(
+                              onSearch: _searchHarvardClassic,
+                            ),
+                          ),
+                        );
+                      },
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.collections_bookmark_outlined,
+                              size: 28,
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Collections',
+                                    style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface,
+                                    ),
+                                  ),
+                                  Text(
+                                    'Curated lists & series',
+                                    style: TextStyle(
+                                      fontSize: 14,
+                                      color: Theme.of(
+                                        context,
+                                      ).colorScheme.onSurface.withOpacity(0.7),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Icon(
+                              Icons.arrow_forward_ios,
+                              size: 16,
+                              color: Theme.of(
+                                context,
+                              ).colorScheme.onSurface.withOpacity(0.5),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
                 ],
 
-                // Gutenberg Section
+                // Gutenberg Search Results
                 if (_searchQuery.isNotEmpty) ...[
                   _buildSectionHeader(
-                    'Project Gutenberg',
-                    'Vast library of free ebooks',
+                    'Search Results', // Changed from Project Gutenberg to be more generic since we search both
+                    'Books from Standard Ebooks & Project Gutenberg',
                   ),
+                  // Show Standard Ebooks search results first
+                  if (_isLoadingStandard)
+                    const Center(child: CircularProgressIndicator())
+                  else
+                    ..._standardEbooks.map(
+                      (book) =>
+                          RemoteBookTile(book: book, isStandardEbook: true),
+                    ),
+
                   if (_isSearchingGutenberg)
                     const Center(
                       child: Padding(
@@ -191,18 +397,20 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         child: CircularProgressIndicator(),
                       ),
                     )
-                  else if (_gutenbergBooks.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.all(16.0),
-                      child: Text('No results found on Project Gutenberg.'),
-                    )
-                  else
+                  else if (_gutenbergBooks.isNotEmpty)
                     ..._gutenbergBooks.map(
                       (book) =>
                           RemoteBookTile(book: book, isStandardEbook: false),
                     ),
-                ] else if (!_isLoadingStandard && filteredStandard.isEmpty) ...[
-                  const Center(child: Text('Search to find books.')),
+
+                  if (!_isLoadingStandard &&
+                      !_isSearchingGutenberg &&
+                      _standardEbooks.isEmpty &&
+                      _gutenbergBooks.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.all(16.0),
+                      child: Center(child: Text('No results found.')),
+                    ),
                 ],
 
                 const SizedBox(height: 40),
@@ -250,9 +458,60 @@ class RemoteBookTile extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    Widget imageWidget;
+    if (book.coverUrl != null) {
+      if (book.coverUrl!.startsWith('data:')) {
+        try {
+          // Extract base64 data
+          final base64String = book.coverUrl!.split(',').last;
+          final bytes = base64Decode(base64String);
+          imageWidget = Image.memory(
+            bytes,
+            width: 50,
+            height: 75,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) => Container(
+              width: 50,
+              height: 75,
+              color: Colors.grey,
+              child: const Icon(Icons.book),
+            ),
+          );
+        } catch (e) {
+          imageWidget = Container(
+            width: 50,
+            height: 75,
+            color: Colors.grey,
+            child: const Icon(Icons.broken_image),
+          );
+        }
+      } else {
+        imageWidget = Image.network(
+          book.coverUrl!,
+          width: 50,
+          height: 75,
+          fit: BoxFit.cover,
+          errorBuilder: (context, error, stackTrace) => Container(
+            width: 50,
+            height: 75,
+            color: Colors.grey,
+            child: const Icon(Icons.book),
+          ),
+        );
+      }
+    } else {
+      imageWidget = Container(
+        width: 50,
+        height: 75,
+        color: Colors.grey,
+        child: const Icon(Icons.book),
+      );
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
+      clipBehavior: Clip.antiAlias,
       color: Theme.of(
         context,
       ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
@@ -286,63 +545,40 @@ class RemoteBookTile extends ConsumerWidget {
         ),
         leading: ClipRRect(
           borderRadius: BorderRadius.circular(4),
-          child: book.coverUrl != null
-              ? Image.network(
-                  book.coverUrl!,
-                  width: 50,
-                  height: 75,
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    width: 50,
-                    height: 75,
-                    color: Colors.grey,
-                    child: const Icon(Icons.book),
-                  ),
-                )
-              : Container(
-                  width: 50,
-                  height: 75,
-                  color: Colors.grey,
-                  child: const Icon(Icons.book),
-                ),
+          child: imageWidget,
         ),
-        trailing: IconButton(
-          icon: const Icon(Icons.download),
-          onPressed: () async {
-            if (book.downloadUrl == null) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('No download link available.')),
-              );
-              return;
-            }
+        trailing: book.downloadUrl != null
+            ? IconButton(
+                icon: const Icon(Icons.download),
+                onPressed: () async {
+                  try {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Downloading...')),
+                    );
 
-            try {
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Downloading...')));
+                    await ref
+                        .read(downloadManagerProvider)
+                        .downloadBook(
+                          book.downloadUrl!,
+                          book.title,
+                          coverUrl: book.coverUrl,
+                        );
 
-              await ref
-                  .read(downloadManagerProvider)
-                  .downloadBook(
-                    book.downloadUrl!,
-                    book.title,
-                    coverUrl: book.coverUrl,
-                  );
-
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Download complete!')),
-                );
-              }
-            } catch (e) {
-              if (context.mounted) {
-                ScaffoldMessenger.of(
-                  context,
-                ).showSnackBar(SnackBar(content: Text('Download failed: $e')));
-              }
-            }
-          },
-        ),
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Download complete!')),
+                      );
+                    }
+                  } catch (e) {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Download failed: $e')),
+                      );
+                    }
+                  }
+                },
+              )
+            : null,
       ),
     );
   }

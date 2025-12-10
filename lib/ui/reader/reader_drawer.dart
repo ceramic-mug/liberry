@@ -63,7 +63,6 @@ class ReaderDrawer extends StatelessWidget {
                   ),
                   onTap: () {
                     onChapterSelected(index);
-                    Navigator.pop(context);
                   },
                 );
               },

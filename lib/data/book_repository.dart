@@ -13,9 +13,16 @@ class BookRepository {
   BookRepository(this._db);
 
   Future<void> addBook(String filePath, {String? remoteCoverUrl}) async {
-    final file = File(filePath);
+    File file = File(filePath);
+
+    // If path is relative, resolve it against documents directory
+    if (!p.isAbsolute(filePath)) {
+      final appDir = await getApplicationDocumentsDirectory();
+      file = File(p.join(appDir.path, filePath));
+    }
+
     if (!await file.exists()) {
-      throw Exception('File not found: $filePath');
+      throw Exception('File not found: ${file.path}');
     }
 
     final bytes = await file.readAsBytes();
@@ -151,6 +158,13 @@ class BookRepository {
     });
   }
 
+  Future<bool> isBookDownloaded(String title) async {
+    final query = _db.select(_db.books)
+      ..where((tbl) => tbl.title.lower().equals(title.toLowerCase()));
+    final result = await query.getSingleOrNull();
+    return result != null;
+  }
+
   Future<List<Book>> _resolveBookPaths(List<Book> books) async {
     final appDir = await getApplicationDocumentsDirectory();
     final docsPath = appDir.path;
@@ -262,5 +276,74 @@ class BookRepository {
 
   Future<void> deleteHighlight(String id) {
     return (_db.delete(_db.quotes)..where((t) => t.id.equals(id))).go();
+  }
+
+  Future<void> updateBook(String id, BooksCompanion companion) {
+    return (_db.update(
+      _db.books,
+    )..where((t) => t.id.equals(id))).write(companion);
+  }
+
+  Future<void> setBookReadStatus(String id, bool isRead) {
+    return updateBook(id, BooksCompanion(isRead: Value(isRead)));
+  }
+
+  Future<void> setBookGroup(String id, String group) {
+    return updateBook(id, BooksCompanion(group: Value(group)));
+  }
+
+  Future<void> offloadBook(String id) async {
+    // 1. Get book to find file path
+    final book = await (_db.select(
+      _db.books,
+    )..where((t) => t.id.equals(id))).getSingle();
+
+    // 2. Delete local file if it exists and is not an http link (just in case)
+    if (await File(book.filePath).exists()) {
+      await File(book.filePath).delete();
+      print('Offloaded book: Deleted file at ${book.filePath}');
+    }
+
+    // 3. Update DB
+    await updateBook(
+      id,
+      const BooksCompanion(
+        group: Value('bookshelf'),
+        isDownloaded: Value(false),
+      ),
+    );
+  }
+
+  Future<List<Book>> searchBooks(String query) async {
+    final lowerQuery = query.toLowerCase();
+
+    // Simple search implementation
+    // For more complex search (highlights), might need more advanced query or multiple steps
+
+    // 1. Search Titles & Authors
+    final bookResults =
+        await (_db.select(_db.books)..where(
+              (t) =>
+                  t.title.lower().contains(lowerQuery) |
+                  t.author.lower().contains(lowerQuery),
+            ))
+            .get();
+
+    // 2. Search Highlights
+    final quoteResults = await (_db.select(
+      _db.quotes,
+    )..where((t) => t.textContent.lower().contains(lowerQuery))).get();
+
+    final bookIdsFromQuotes = quoteResults.map((q) => q.bookId).toSet();
+
+    // Combine
+    final additionalBooks = await (_db.select(
+      _db.books,
+    )..where((t) => t.id.isIn(bookIdsFromQuotes))).get();
+
+    final allBooks = {...bookResults, ...additionalBooks}.toList();
+
+    // Re-resolve paths (needed for covers etc in UI)
+    return _resolveBookPaths(allBooks);
   }
 }

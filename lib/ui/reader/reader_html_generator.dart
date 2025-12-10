@@ -1022,6 +1022,41 @@ class ReaderHtmlGenerator {
               var isDragging = false;
               var isScrolling = false; // scrolling vertically or selecting
               
+              // New MacOS / Desktop Support
+              var lastHandledTapTime = 0;
+              
+              // 1. Key Navigation
+              document.addEventListener('keydown', function(e) {
+                  if (interactionLocked || inputBlocked) return;
+                  
+                  if (e.key === 'ArrowRight') {
+                       e.preventDefault();
+                       var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                       var page = Math.round(curScroll / width);
+                       snapToPage(page + 1);
+                  } else if (e.key === 'ArrowLeft') {
+                       e.preventDefault();
+                       var curScroll = container.scrollLeft !== undefined ? container.scrollLeft : window.scrollX;
+                       var page = Math.round(curScroll / width);
+                       snapToPage(page - 1);
+                  }
+              });
+              
+              // 2. Click Handler (for non-touch devices or hybrid)
+              document.addEventListener('click', function(e) {
+                  if (inputBlocked) return;
+                  if (new Date().getTime() - lastHandledTapTime < 500) {
+                      console.log("Reader: Click ignored (handled by touch)");
+                      return; 
+                  }
+                  
+                  if (isInteractive(e.target)) return;
+                  if (isMenuOpen()) { hideMenu(); return; }
+                  
+                  // Use standardized Tap Logic (Zones)
+                  handleTap(e.clientX);
+              });
+              
               const width = window.innerWidth;
               
               document.addEventListener('touchstart', function(e) {
@@ -1173,11 +1208,14 @@ class ReaderHtmlGenerator {
                           }
                           
                           console.log("Reader: Locked Tap on Content -> Dismissing Controls");
+                          e.preventDefault(); // Prevent ghost click
+                          lastHandledTapTime = new Date().getTime(); // Ensure click handler ignores this
                           if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onTap');
                           return;
                       }
                       
                       // 4. If Unlocked, handle Tap Zones
+                      lastHandledTapTime = new Date().getTime();
                       handleTap(touchStartX);
                       return; 
                   }
