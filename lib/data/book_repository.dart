@@ -298,7 +298,13 @@ class BookRepository {
   }
 
   Future<void> updateBookStatus(String id, String status) {
-    return updateBook(id, BooksCompanion(status: Value(status)));
+    return updateBook(
+      id,
+      BooksCompanion(
+        status: Value(status),
+        isRead: Value(status == 'read'), // Sync legacy field
+      ),
+    );
   }
 
   Future<void> updateBookLocation(String id, String location) {

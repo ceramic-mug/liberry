@@ -26,6 +26,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   bool _isSearching = false;
   SortOption _sortOption = SortOption.dateAdded;
   final TextEditingController _searchController = TextEditingController();
+  Set<String> _statusFilters = {};
 
   @override
   void dispose() {
@@ -50,6 +51,106 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       default:
         return books..sort((a, b) => b.addedAt.compareTo(a.addedAt));
     }
+  }
+
+  void _showFilterDialog() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Filter by Status',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Wrap(
+                      spacing: 8,
+                      children: [
+                        FilterChip(
+                          label: const Text('Not Started'),
+                          selected: _statusFilters.contains('not_started'),
+                          onSelected: (selected) {
+                            setModalState(() {
+                              setState(() {
+                                if (selected) {
+                                  _statusFilters.add('not_started');
+                                } else {
+                                  _statusFilters.remove('not_started');
+                                }
+                              });
+                            });
+                          },
+                        ),
+                        FilterChip(
+                          label: const Text('Reading'),
+                          selected: _statusFilters.contains('reading'),
+                          onSelected: (selected) {
+                            setModalState(() {
+                              setState(() {
+                                if (selected) {
+                                  _statusFilters.add('reading');
+                                } else {
+                                  _statusFilters.remove('reading');
+                                }
+                              });
+                            });
+                          },
+                        ),
+                        FilterChip(
+                          label: const Text('Read'),
+                          selected: _statusFilters.contains('read'),
+                          onSelected: (selected) {
+                            setModalState(() {
+                              setState(() {
+                                if (selected) {
+                                  _statusFilters.add('read');
+                                } else {
+                                  _statusFilters.remove('read');
+                                }
+                              });
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        TextButton(
+                          onPressed: () {
+                            setState(() {
+                              _statusFilters.clear();
+                            });
+                            Navigator.pop(context);
+                          },
+                          child: const Text('Clear All'),
+                        ),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          child: const Text('Done'),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   @override
@@ -105,6 +206,15 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   });
                 },
               ),
+              IconButton(
+                icon: Icon(
+                  Icons.filter_list,
+                  color: _statusFilters.isNotEmpty
+                      ? Theme.of(context).primaryColor
+                      : null,
+                ),
+                onPressed: _showFilterDialog,
+              ),
               PopupMenuButton<SortOption>(
                 icon: const Icon(Icons.sort),
                 onSelected: (SortOption result) =>
@@ -151,6 +261,18 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
             }
 
             var books = snapshot.data!;
+
+            // 0. Filter by Status (Global)
+            if (_statusFilters.isNotEmpty) {
+              books = books.where((b) {
+                // If filtering by 'read', also check legacy isRead
+                if (_statusFilters.contains('read') &&
+                    (b.status == 'read' || b.isRead)) {
+                  return true;
+                }
+                return _statusFilters.contains(b.status);
+              }).toList();
+            }
 
             // 1. Search Mode
             if (_isSearching) {
@@ -496,38 +618,57 @@ class BookSpineItem extends ConsumerWidget {
             if (book.status == 'read' || book.isRead) ...[
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.green.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                  color: Colors.green,
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
                 ),
-                child: const Text(
-                  'READ',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.green,
-                  ),
-                ),
+                child: const Icon(Icons.check, size: 14, color: Colors.white),
               ),
             ] else if (book.status == 'reading') ...[
               const SizedBox(width: 8),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                padding: const EdgeInsets.all(4),
                 decoration: BoxDecoration(
-                  color: Colors.blue.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(4),
-                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                  color: Colors.blue.withOpacity(0.9),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
                 ),
-                child: const Text(
-                  'READING',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.blue,
-                  ),
+                child: const Icon(
+                  Icons.auto_stories,
+                  size: 14,
+                  color: Colors.white,
                 ),
+              ),
+            ] else if (book.status == 'not_started') ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.all(4),
+                decoration: BoxDecoration(
+                  color: Colors.grey.withOpacity(0.9),
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.2),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ],
+                ),
+                child: const Icon(Icons.book, size: 14, color: Colors.white),
               ),
             ],
             if (!book.isDownloaded)
