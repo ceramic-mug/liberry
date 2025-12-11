@@ -6,15 +6,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liberry/data/database.dart';
-import 'package:liberry/data/book_repository.dart';
 import 'package:liberry/data/reader_settings_repository.dart';
 import 'package:liberry/providers.dart';
 import 'package:liberry/services/epub_service.dart';
 import 'package:liberry/ui/reader/reader_html_generator.dart';
 import 'package:liberry/ui/reader/reader_models.dart';
 import 'package:liberry/ui/reader/reader_settings_modal.dart';
+import 'package:liberry/ui/reader/selection_menu.dart'; // Import SelectionMenu
 import 'package:epubx/epubx.dart' as epub;
-import 'package:share_plus/share_plus.dart';
 
 import 'package:liberry/ui/reader/reader_drawer.dart';
 import 'package:liberry/ui/reader/reader_navigation_bar.dart';
@@ -22,8 +21,15 @@ import 'package:liberry/ui/reader/reader_top_bar.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final Book book;
+  final int? initialChapterIndex;
+  final String? initialCfi;
 
-  const ReaderScreen({super.key, required this.book});
+  const ReaderScreen({
+    super.key,
+    required this.book,
+    this.initialChapterIndex,
+    this.initialCfi,
+  });
 
   @override
   ConsumerState<ReaderScreen> createState() => _ReaderScreenState();
@@ -40,6 +46,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   List<List<epub.EpubChapterRef>> _spineGroups = [];
   int _currentChapterIndex = 0;
   String _currentProgressCfi = '';
+
+  // Overlay Menu State
+  Rect? _selectionRect;
+  String? _selectedText;
+  String? _selectedCfi;
+  String?
+  _activeHighlightId; // If non-null, we show highlight menu instead of selection menu
 
   // Settings
   ReaderTheme _theme = ReaderTheme.light;
@@ -98,15 +111,21 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       int initialIndex = 0;
       String initialCfi = '';
 
-      // Fetch progress from repository properly
-      final savedProgress = await bookRepo.getReadingProgress(widget.book.id);
+      if (widget.initialChapterIndex != null) {
+        // Priority: Use passed arguments
+        initialIndex = widget.initialChapterIndex!;
+        initialCfi = widget.initialCfi ?? '';
+      } else {
+        // Fallback: Use saved progress
+        final savedProgress = await bookRepo.getReadingProgress(widget.book.id);
 
-      if (savedProgress != null && savedProgress.isNotEmpty) {
-        final parts = savedProgress.split('|');
-        if (parts.isNotEmpty) {
-          initialIndex = int.tryParse(parts[0]) ?? 0;
-          if (parts.length > 1) {
-            initialCfi = parts[1];
+        if (savedProgress != null && savedProgress.isNotEmpty) {
+          final parts = savedProgress.split('|');
+          if (parts.isNotEmpty) {
+            initialIndex = int.tryParse(parts[0]) ?? 0;
+            if (parts.length > 1) {
+              initialCfi = parts[1];
+            }
           }
         }
       }
@@ -418,35 +437,181 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     },
                   );
 
+                  // Selection & Highlight Handlers (Native Overlay)
                   controller.addJavaScriptHandler(
-                    handlerName: 'onMenuAction',
+                    handlerName: 'onSelectionChanged',
                     callback: (args) {
-                      if (args.length >= 3) {
-                        _handleMenuAction(
-                          args[0].toString(),
-                          args[1].toString(),
-                          args[2].toString(),
-                        );
+                      if (args.length >= 6) {
+                        final double left = (args[0] as num).toDouble();
+                        final double top = (args[1] as num).toDouble();
+                        final double width = (args[2] as num).toDouble();
+                        final double height = (args[3] as num).toDouble();
+                        final String text = args[4].toString();
+                        final String cfi = args[5].toString();
+
+                        setState(() {
+                          _selectionRect = Rect.fromLTWH(
+                            left,
+                            top,
+                            width,
+                            height,
+                          );
+                          _selectedText = text;
+                          _selectedCfi = cfi;
+                          _activeHighlightId = null;
+                        });
                       }
                     },
                   );
 
                   controller.addJavaScriptHandler(
-                    handlerName: 'onHighlightAction',
+                    handlerName: 'onSelectionCleared',
                     callback: (args) {
-                      if (args.length >= 2) {
-                        _handleHighlightAction(
-                          args[0].toString(), // action
-                          args[1].toString(), // id
+                      setState(() {
+                        _selectionRect = null;
+                        _selectedText = null;
+                        _selectedCfi = null;
+                        _activeHighlightId = null;
+                      });
+                    },
+                  );
+
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onHighlightClicked',
+                    callback: (args) {
+                      if (args.length >= 5) {
+                        final String id = args[0].toString();
+                        final double left = (args[1] as num).toDouble();
+                        final double top = (args[2] as num).toDouble();
+                        final double width = (args[3] as num).toDouble();
+                        final double height = (args[4] as num).toDouble();
+                        print(
+                          "Flutter Highlight Click: $id Rect: $left,$top $width x $height",
                         );
+                        setState(() {
+                          _activeHighlightId = id;
+                          _selectionRect = Rect.fromLTWH(
+                            left,
+                            top,
+                            width,
+                            height,
+                          );
+                          _selectedText = null;
+                          _selectedCfi = null;
+                        });
                       }
                     },
                   );
+
                   _loadChapter(_currentChapterIndex);
                 },
               ),
             ),
           ),
+
+          // Native Selection Menu Overlay
+          if (_selectionRect != null)
+            (() {
+              // Apply SafeArea offset because WebView is inside SafeArea
+              final padding = MediaQuery.of(context).padding;
+              final rect = _selectionRect!.shift(
+                Offset(padding.left, padding.top),
+              );
+
+              // Safe Area top padding for boundary check (relative to screen)
+              final topBoundary = padding.top + 60;
+
+              // Approximate menu dims
+              const menuWidth = 240.0;
+              const menuHeight = 60.0;
+              final screenWidth = MediaQuery.of(context).size.width;
+
+              // Centered on selection
+              double left = rect.center.dx - (menuWidth / 2);
+
+              // Clamping Logic
+              if (left < 10) left = 10;
+              if (left + menuWidth > screenWidth - 10)
+                left = screenWidth - menuWidth - 10;
+
+              double top = rect.top - menuHeight - 15;
+              // If menu goes off top, put it below
+              if (top < topBoundary) top = rect.bottom + 15;
+
+              return Positioned(
+                left: left,
+                top: top,
+                child: SelectionMenu(
+                  isHighlightMenu: _activeHighlightId != null,
+                  onHighlight: () async {
+                    if (_selectedText != null && _selectedCfi != null) {
+                      await _createHighlight(_selectedText!, _selectedCfi!);
+                      setState(() {
+                        _selectionRect = null;
+                        _selectedText = null;
+                      });
+                    }
+                  },
+                  onAssign: () async {
+                    if (_activeHighlightId != null) {
+                      _showAssignCharacterDialog(context, _activeHighlightId!);
+                      setState(() {
+                        _selectionRect = null;
+                      });
+                    } else if (_selectedText != null && _selectedCfi != null) {
+                      final id = await _createHighlight(
+                        _selectedText!,
+                        _selectedCfi!,
+                      );
+                      if (id != null && mounted) {
+                        _showAssignCharacterDialog(context, id);
+                        setState(() {
+                          _selectionRect = null;
+                          _selectedText = null;
+                        });
+                      }
+                    }
+                  },
+                  onCopy: () async {
+                    if (_selectedText != null) {
+                      await Clipboard.setData(
+                        ClipboardData(text: _selectedText!),
+                      );
+                      if (mounted)
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Copied!')),
+                        );
+                      setState(() {
+                        _selectionRect = null;
+                        _selectedText = null;
+                      });
+                    }
+                  },
+                  onDelete: () async {
+                    if (_activeHighlightId != null) {
+                      await _handleHighlightAction(
+                        'delete',
+                        _activeHighlightId!,
+                      );
+                      setState(() {
+                        _selectionRect = null;
+                      });
+                    }
+                  },
+                  onNote: () async {
+                    if (_activeHighlightId != null) {
+                      _showAddNoteToHighlightDialog(
+                        context,
+                        _activeHighlightId!,
+                      );
+                      setState(() {
+                        _selectionRect = null;
+                      });
+                    }
+                  },
+                ),
+              );
+            }()),
 
           // Controls
           if (_showControls) ...[
@@ -735,39 +900,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         ],
       ),
     );
-  }
-
-  Future<void> _handleMenuAction(String action, String cfi, String text) async {
-    switch (action) {
-      case 'highlight':
-        await _createHighlight(text, cfi);
-        break;
-      case 'assign':
-        // For assign, we first create the highlight, then show the dialog
-        final highlightId = await _createHighlight(text, cfi);
-        if (highlightId != null && mounted) {
-          _showAssignCharacterDialog(context, highlightId);
-        }
-        break;
-      case 'copy':
-        await Clipboard.setData(ClipboardData(text: text));
-        if (mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('Copied to clipboard')));
-        }
-        break;
-      case 'share':
-        await Share.share(text);
-        break;
-      case 'define':
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Dictionary lookup not implemented')),
-          );
-        }
-        break;
-    }
   }
 
   // Helper method now available

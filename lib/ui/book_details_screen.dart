@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:intl/intl.dart';
 import 'package:flutter/material.dart';
@@ -1028,11 +1029,45 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                       child: FilledButton.icon(
                         onPressed: () {
                           Navigator.pop(context); // Close modal
+
+                          int? chapterIndex;
+                          String? cfi;
+
+                          if (highlight.cfi != null) {
+                            try {
+                              final Map<String, dynamic> data = jsonDecode(
+                                highlight.cfi!,
+                              );
+                              if (data.containsKey('chapterIndex')) {
+                                chapterIndex = data['chapterIndex'] is int
+                                    ? data['chapterIndex']
+                                    : int.tryParse(
+                                        data['chapterIndex'].toString(),
+                                      );
+                              }
+
+                              if (data.containsKey('startPath')) {
+                                cfi = jsonEncode({
+                                  'path': data['startPath'],
+                                  'offset': data['startOffset'] ?? 0,
+                                });
+                              } else {
+                                cfi = highlight.cfi;
+                              }
+                            } catch (e) {
+                              print("Error parsing helper cfi: $e");
+                            }
+                          }
+
                           // Navigate to reader
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) => ReaderScreen(book: book),
+                              builder: (context) => ReaderScreen(
+                                book: book,
+                                initialChapterIndex: chapterIndex,
+                                initialCfi: cfi,
+                              ),
                             ),
                           );
                         },

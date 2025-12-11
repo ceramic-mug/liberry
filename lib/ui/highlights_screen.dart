@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -290,12 +291,46 @@ class HighlightsTab extends ConsumerWidget {
                       child: FilledButton.icon(
                         onPressed: () {
                           Navigator.pop(context); // Close modal
+
+                          int? chapterIndex;
+                          String? cfi;
+
+                          if (item.quote.cfi != null) {
+                            try {
+                              final Map<String, dynamic> data = jsonDecode(
+                                item.quote.cfi!,
+                              );
+
+                              if (data.containsKey('chapterIndex')) {
+                                chapterIndex = data['chapterIndex'] is int
+                                    ? data['chapterIndex']
+                                    : int.tryParse(
+                                        data['chapterIndex'].toString(),
+                                      );
+                              }
+
+                              if (data.containsKey('startPath')) {
+                                cfi = jsonEncode({
+                                  'path': data['startPath'],
+                                  'offset': data['startOffset'] ?? 0,
+                                });
+                              } else {
+                                cfi = item.quote.cfi;
+                              }
+                            } catch (e) {
+                              print("Error parsing helper cfi: $e");
+                            }
+                          }
+
                           // Navigate to reader
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (context) =>
-                                  ReaderScreen(book: item.book),
+                              builder: (context) => ReaderScreen(
+                                book: item.book,
+                                initialChapterIndex: chapterIndex,
+                                initialCfi: cfi,
+                              ),
                             ),
                           );
                         },

@@ -244,7 +244,7 @@ class BookRepository {
 
   Future<String> addHighlight(String bookId, String text, String cfi) async {
     print(
-      "BookRepository: Adding highlight for book $bookId. Text: ${text.substring(0, 10)}...",
+      "BookRepository: Adding highlight for book $bookId. Text: ${text.length > 10 ? text.substring(0, 10) : text}...",
     );
     final id = const Uuid().v4();
     await _db

@@ -137,7 +137,7 @@ const icons = {
 /* ---------------- INITIALIZATION ---------------- */
 function init() {
     console.log("Initializing Reader...");
-    injectMenus();
+    // injectMenus(); // Removed
     setupHighlights();
     setupEvents();
 
@@ -215,26 +215,11 @@ function setupHighlights() {
 }
 
 function setupEvents() {
-    // Bind Events (Main Menu)
-    document.getElementById('btn-highlight').addEventListener('mousedown', function (e) { handleAction(e, 'highlight'); });
-    document.getElementById('btn-assign').addEventListener('mousedown', function (e) { handleAction(e, 'assign'); });
-    document.getElementById('btn-copy').addEventListener('mousedown', function (e) { handleAction(e, 'copy'); });
-
-    // Bind Events (Highlight Menu)
-    document.getElementById('btn-hl-assign').addEventListener('mousedown', function (e) { handleHighlightAction(e, 'assign'); });
-    document.getElementById('btn-hl-note').addEventListener('mousedown', function (e) { handleHighlightAction(e, 'note'); });
-    document.getElementById('btn-delete').addEventListener('mousedown', function (e) { handleHighlightAction(e, 'delete'); });
-
     // Selection Change
     document.addEventListener('selectionchange', function () {
-        var selection = window.getSelection();
-        if (selection.rangeCount > 0 && !selection.isCollapsed && selection.toString().trim().length > 0) {
-            var range = selection.getRangeAt(0);
-            var rect = range.getBoundingClientRect();
-            showMenu(rect);
-        } else {
-            hideMenu();
-        }
+        // Debounce slightly
+        if (window.selectionTimer) clearTimeout(window.selectionTimer);
+        window.selectionTimer = setTimeout(reportSelection, 150);
     });
 
     // Interaction Check for Taps
@@ -259,29 +244,7 @@ function getCFI() {
     return null;
 }
 
-function handleAction(e, action) {
-    e.preventDefault();
-    e.stopPropagation();
-    var cfi = getCFI();
-    var text = window.getSelection().toString();
 
-    if (window.flutter_inappwebview) {
-        window.flutter_inappwebview.callHandler('onMenuAction', action, cfi, text);
-    }
-
-    window.getSelection().removeAllRanges();
-    hideMenu();
-}
-
-function handleHighlightAction(e, action) {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (window.flutter_inappwebview && currentHighlightId) {
-        window.flutter_inappwebview.callHandler('onHighlightAction', action, currentHighlightId);
-    }
-    hideHighlightMenu();
-}
 
 /* ---------------- RESTORE LOGIC ---------------- */
 var isRestoring = true;
@@ -442,7 +405,6 @@ function setupVerticalObservers() {
     document.addEventListener('click', function (e) {
         if (inputBlocked) { e.preventDefault(); e.stopPropagation(); return; }
         if (isInteractive(e.target)) return;
-        if (isMenuOpen()) { hideMenu(); return; }
 
         var y = e.clientY;
         if (y < 80 || y > window.innerHeight - 80) return;
@@ -514,7 +476,6 @@ function setupHorizontalObservers() {
         if (inputBlocked) return;
         if (new Date().getTime() - lastHandledTapTime < 500) return;
         if (isInteractive(e.target)) return;
-        if (isMenuOpen()) { hideMenu(); return; }
         handleTap(e.clientX);
     });
 
@@ -566,7 +527,6 @@ function setupHorizontalObservers() {
 
         if (timeDiff < 300 && Math.abs(diffX) < 10 && Math.abs(touchStartY - e.changedTouches[0].clientY) < 10) {
             if (isInteractive(e.target)) return;
-            if (isMenuOpen()) { hideMenu(); return; }
             if (interactionLocked) {
                 // Navbar zone check
                 var y = e.changedTouches[0].clientY;
@@ -643,93 +603,31 @@ function setupHorizontalObservers() {
 /* ---------------- MENU & INTERACTION UTILS ---------------- */
 var currentHighlightId = null;
 
-function showMenu(rect) {
-    hideHighlightMenu();
-    var menu = document.getElementById('custom-menu');
+function reportSelection() {
+    var selection = window.getSelection();
+    if (selection.rangeCount > 0 && !selection.isCollapsed && selection.toString().trim().length > 0) {
+        var range = selection.getRangeAt(0);
+        var rect = range.getBoundingClientRect();
+        var cfi = getCFI();
+        var text = selection.toString();
 
-    menu.style.display = 'grid';
-    menu.offsetHeight; // force reflow
-    menu.classList.add('visible');
-
-    var menuWidth = menu.offsetWidth;
-    var menuHeight = menu.offsetHeight;
-    var scrollX = window.scrollX;
-    var scrollY = window.scrollY;
-
-    var top = rect.top - menuHeight - 15 + scrollY;
-    var left = rect.left + (rect.width / 2) + scrollX;
-
-    if (top < scrollY + 40) {
-        top = rect.bottom + 15 + scrollY;
-        menu.classList.add('below');
+        if (window.flutter_inappwebview) {
+            window.flutter_inappwebview.callHandler('onSelectionChanged',
+                rect.left, rect.top, rect.width, rect.height, text, cfi
+            );
+        }
     } else {
-        menu.classList.remove('below');
+        if (window.flutter_inappwebview) {
+            if (!window.ignoreSelectionClear) {
+                window.flutter_inappwebview.callHandler('onSelectionCleared');
+            }
+        }
     }
-
-    if (left - (menuWidth / 2) < 10) left = (menuWidth / 2) + 10;
-    if (left + (menuWidth / 2) > window.innerWidth - 10) left = window.innerWidth - 10 - (menuWidth / 2);
-
-    menu.style.top = top + 'px';
-    menu.style.left = left - (menuWidth / 2) + 'px';
-}
-
-function hideMenu() {
-    var menu = document.getElementById('custom-menu');
-    menu.classList.remove('visible');
-    setTimeout(function () {
-        if (!menu.classList.contains('visible')) menu.style.display = 'none';
-    }, 200);
-}
-
-function isMenuOpen() {
-    var menu = document.getElementById('custom-menu');
-    return menu && menu.style.display !== 'none';
-}
-
-function showHighlightMenu(rect, id) {
-    var menu = document.getElementById('highlight-menu');
-    currentHighlightId = id;
-
-    menu.style.display = 'grid';
-    menu.offsetHeight;
-    menu.classList.add('visible');
-
-    var menuWidth = 165;
-    var menuHeight = 60;
-    var scrollX = window.scrollX;
-    var scrollY = window.scrollY;
-
-    var top = rect.top - menuHeight - 15 + scrollY;
-    var left = rect.left + (rect.width / 2) + scrollX;
-
-    if (top < scrollY + 40) {
-        top = rect.bottom + 15 + scrollY;
-        menu.classList.add('below');
-    } else {
-        menu.classList.remove('below');
-    }
-
-    if (left - (menuWidth / 2) < 10) left = (menuWidth / 2) + 10;
-    if (left + (menuWidth / 2) > window.innerWidth - 10) left = window.innerWidth - 10 - (menuWidth / 2);
-
-    menu.style.top = top + 'px';
-    menu.style.left = left - (menuWidth / 2) + 'px';
-}
-
-function hideHighlightMenu() {
-    var menu = document.getElementById('highlight-menu');
-    menu.classList.remove('visible');
-    setTimeout(function () {
-        if (!menu.classList.contains('visible')) menu.style.display = 'none';
-    }, 200);
-    currentHighlightId = null;
 }
 
 function isInteractive(target) {
     if (!target) return false;
-    if (target.closest('.menu-item') ||
-        target.closest('#custom-menu') ||
-        target.closest('.highlight') ||
+    if (target.closest('.highlight') ||
         target.closest('a') ||
         target.closest('button')) return true;
     return false;
@@ -788,7 +686,19 @@ function applyHighlight(cfi, id) {
                 span.dataset.id = id;
                 span.onclick = function (e) {
                     e.stopPropagation();
-                    showHighlightMenu(span.getBoundingClientRect(), id);
+
+                    // Prevent immediate clearing by selectionchange
+                    window.ignoreSelectionClear = true;
+                    setTimeout(function () { window.ignoreSelectionClear = false; }, 500);
+
+                    // Report highlight click to Flutter
+                    if (window.flutter_inappwebview) {
+                        var rect = span.getBoundingClientRect();
+                        console.log("JS Highlight Click: " + id + " Rect: " + rect.left + "," + rect.top + " " + rect.width + "x" + rect.height);
+                        window.flutter_inappwebview.callHandler('onHighlightClicked',
+                            id, rect.left, rect.top, rect.width, rect.height
+                        );
+                    }
                 };
                 try { subRange.surroundContents(span); } catch (e) { }
             }
@@ -798,7 +708,7 @@ function applyHighlight(cfi, id) {
 
 // Bootstrap
 if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', init);
+    document.addEventListener("DOMContentLoaded", init);
 } else {
     init();
 }
