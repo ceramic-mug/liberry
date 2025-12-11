@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import '../data/remote/remote_book.dart';
-import '../data/harvard_classics.dart';
+import '../data/book_collections.dart';
 import 'collections_screen.dart';
 import 'gutenberg_screen.dart';
 import 'standard_ebooks_screen.dart';
@@ -107,9 +107,9 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     }
   }
 
-  void _searchHarvardClassic(HarvardClassic classic) {
+  void _searchCollectionBook(CollectionBook book) {
     Navigator.of(context).popUntil((route) => route.isFirst);
-    _searchController.text = '${classic.author} ${classic.title}';
+    _searchController.text = '${book.author} ${book.title}';
     _search();
   }
 
@@ -309,7 +309,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                           context,
                           MaterialPageRoute(
                             builder: (context) => CollectionsScreen(
-                              onSearch: _searchHarvardClassic,
+                              onSearch: _searchCollectionBook,
                             ),
                           ),
                         );

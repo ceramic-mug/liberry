@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'harvard_classics_screen.dart';
-import '../data/harvard_classics.dart';
+import '../data/book_collections.dart';
+import 'collection_details_screen.dart';
 
 class CollectionsScreen extends ConsumerWidget {
-  final void Function(HarvardClassic) onSearch;
+  final void Function(CollectionBook) onSearch;
 
   const CollectionsScreen({super.key, required this.onSearch});
 
@@ -14,34 +14,33 @@ class CollectionsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Book Collections')),
       body: ListView(
         padding: const EdgeInsets.all(16.0),
-        children: [
-          _buildCollectionCard(
-            context,
-            title: 'Harvard Classics',
-            subtitle: 'Dr. Eliot\'s Five-Foot Shelf of Books',
-            icon: Icons.local_library_outlined,
-            color: Colors.red.shade800,
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      HarvardClassicsScreen(onSearch: onSearch),
-                ),
-              );
-            },
-          ),
-        ],
+        children: BookCollectionsData.collections.map((collection) {
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 16.0),
+            child: _buildCollectionCard(
+              context,
+              collection: collection,
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => CollectionDetailsScreen(
+                      collection: collection,
+                      onSearch: onSearch,
+                    ),
+                  ),
+                );
+              },
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 
   Widget _buildCollectionCard(
     BuildContext context, {
-    required String title,
-    required String subtitle,
-    required IconData icon,
-    required Color color,
+    required BookCollection collection,
     required VoidCallback onTap,
   }) {
     return Card(
@@ -57,10 +56,10 @@ class CollectionsScreen extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: color.withOpacity(0.1),
+                  color: collection.color.withOpacity(0.1),
                   shape: BoxShape.circle,
                 ),
-                child: Icon(icon, size: 32, color: color),
+                child: Icon(collection.icon, size: 32, color: collection.color),
               ),
               const SizedBox(width: 24),
               Expanded(
@@ -68,14 +67,14 @@ class CollectionsScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      collection.title,
                       style: Theme.of(context).textTheme.titleLarge?.copyWith(
                         fontWeight: FontWeight.bold,
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      subtitle,
+                      collection.subtitle,
                       style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                         color: Theme.of(
                           context,
