@@ -256,9 +256,18 @@ class ReaderHtmlGenerator {
             background-color: ${theme == ReaderTheme.dark ? 'rgba(64, 196, 255, 0.5)' : 'rgba(33, 150, 243, 0.3)'};
             color: inherit;
         }
-        /* Suppress on all elements */
+        /* Suppress on all elements by default to fix 'select whole page' bug */
         * {
           -webkit-touch-callout: none !important;
+          -webkit-user-select: none;
+          user-select: none;
+        }
+        
+        /* Re-enable selection on text content specifically */
+        p, div, span, h1, h2, h3, h4, h5, h6, li, blockquote, a {
+            -webkit-user-select: text !important;
+            user-select: text !important;
+            cursor: text;
         }
         
         /* Force global font settings to override ANY book defaults */
@@ -297,54 +306,118 @@ class ReaderHtmlGenerator {
         h5 { font-size: 0.83em !important; margin-left: 0 !important; margin-right: 0 !important; }
         h6 { font-size: 0.67em !important; margin-left: 0 !important; margin-right: 0 !important; }
           /* Custom Menu */
-        #custom-menu {
+          /* Custom Menu & Highlight Menu */
+        #custom-menu, #highlight-menu {
+            all: initial;
             position: absolute;
-            background-color: #333;
-            border-radius: 8px;
-            padding: 4px;
+            background-color: #1a1a1a !important; /* Force Opaque */
+            border-radius: 18px;
+            padding: 8px;
             display: none;
-            grid-template-columns: 1fr 1fr;
-            gap: 1px;
-            z-index: 100000 !important; /* Extremely high to beat any content */
-            pointer-events: auto !important; /* Ensure it captures clicks */
-            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-            width: 240px; /* Wider for "Character" */
-            overflow: hidden; /* Ensure rounded corners clip children */
+            grid-template-columns: 43px 43px;
+            grid-template-rows: 43px 43px;
+            gap: 8px;
+            z-index: 2147483647 !important;
+            pointer-events: auto !important;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.15);
+            width: 110px; 
+            height: 110px;
             
-            /* Reset typography to prevent inheriting book settings */
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
-            font-size: 14px !important; 
-            line-height: normal !important;
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+            box-sizing: border-box !important;
+            
+            /* Isolation to force new stacking context on top */
+            isolation: isolate; 
+            
+            /* Animation - NO TRANSFORM to avoid stacking issues with selection */
+            opacity: 0;
+            transition: opacity 0.1s ease-out;
         }
+        
+        #custom-menu.visible, #highlight-menu.visible {
+            display: grid !important;
+            opacity: 1;
+        }
+
+        #custom-menu *, #highlight-menu * {
+            box-sizing: border-box !important;
+            -webkit-user-select: none !important;
+            user-select: none !important;
+            
+            /* CRITICAL: Override global 'body *' wildcards to prevent book settings from breaking menu */
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+            font-size: 16px !important; 
+            line-height: 1 !important;
+            letter-spacing: normal !important;
+            max-width: none !important;
+        }
+        
         .menu-item {
-            color: white;
-            padding: 12px 10px; /* More vertical padding */
+            color: #ffffff;
+            padding: 0;
+            margin: 0;
             cursor: pointer;
-            font-size: 14px;
             display: flex;
             align-items: center;
-            justify-content: center; /* Center content */
-            background-color: #333;
-            transition: background-color 0.2s;
+            justify-content: center;
+            background-color: #2c2c2c;
+            border-radius: 10px;
+            transition: background-color 0.1s;
+            width: 100%;
+            height: 100%;
+            position: relative;
         }
         .menu-item:hover {
-            background-color: #444;
+            background-color: #3d3d3d;
         }
-        .menu-item span, .menu-item div {
-             font-size: 14px !important;
-             line-height: normal !important;
+        .menu-item:active {
+            background-color: #505050;
+            transform: scale(0.96);
         }
-        .menu-icon {
-            margin-right: 8px;
-            display: flex;
-            align-items: center;
-            width: 20px; /* Fixed width for icon alignment */
-            justify-content: center;
+        
+        /* First item (Highlight) spans full width in 3-item layout (Main Menu) */
+        #btn-highlight {
+            grid-column: span 2;
         }
+
+        .menu-item svg {
+            width: 22px; 
+            height: 22px;
+            fill: #ffffff; 
+            display: block;
+            margin: 0; 
+        }
+
+        /* Trash Icon for Highlight Menu */
+        #btn-delete svg {
+            fill: #ff5252; /* Red for delete */
+        }
+
+        /* Solid Tail */
+        #custom-menu::after, #highlight-menu::after {
+            content: '';
+            position: absolute;
+            bottom: -6px;
+            left: 50%;
+            margin-left: -6px;
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-top: 6px solid #1a1a1a;
+        }
+        
+        #custom-menu.below::after, #highlight-menu.below::after {
+            bottom: auto;
+            top: -6px;
+            border-top: none;
+            border-bottom: 6px solid #1a1a1a;
+        }
+        
         .highlight {
-            background-color: ${theme == ReaderTheme.dark ? 'rgba(253, 216, 53, 0.5)' : 'rgba(255, 235, 59, 0.5)'};
+            background-color: ${theme == ReaderTheme.dark ? 'rgba(253, 216, 53, 0.4)' : 'rgba(255, 235, 59, 0.4)'};
             cursor: pointer;
-            /* mix-blend-mode removed to ensure visibility on transparent backgrounds */
+            border-bottom: 2px solid ${theme == ReaderTheme.dark ? 'rgba(253, 216, 53, 0.8)' : 'rgba(253, 216, 53, 0.8)'}; 
             color: inherit;
         }
       </style>
@@ -603,10 +676,13 @@ class ReaderHtmlGenerator {
         }
 
         const icons = {
-          highlight: '<svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM5.92 19H5v-.92l9.06-9.06.92.92L5.92 19z"/></svg>',
-          assign: '<svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
-          copy: '<svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>',
-          share: '<svg viewBox="0 0 24 24" width="20" height="20" fill="white"><path d="M18 16.08c-.76 0-1.44.3-1.96.77L8.91 12.7c.05-.23.09-.46.09-.7s-.04-.47-.09-.7l7.05-4.11c.54.5 1.25.81 2.04.81 1.66 0 3-1.34 3-3s-1.34-3-3-3-3 1.34-3 3c0 .24.04.47.09.7L8.04 9.81C7.5 9.31 6.79 9 6 9c-1.66 0-3 1.34-3 3s1.34 3 3 3c.79 0 1.5-.31 2.04-.81l7.12 4.16c-.05.21-.08.43-.08.65 0 1.61 1.31 2.92 2.92 2.92 1.61 0 2.92-1.31 2.92-2.92s-1.31-2.92-2.92-2.92z"/></svg>'
+          highlight: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>',
+          assign: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>',
+          copy: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>',
+          delete: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg>',
+          note: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04c.39-.39.39-1.02 0-1.41l-2.34-2.34c-.39-.39-1.02-.39-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>' // Reuse pen or used document? Let's use document text.
+          // Better note icon:
+          // note: '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>'
         };
 
         // Global state
@@ -614,34 +690,88 @@ class ReaderHtmlGenerator {
         
         function init() {
            console.log("Initializing Reader...");
-           // Inject Menu
-           var menu = document.createElement('div');
-           menu.id = 'custom-menu';
-           menu.innerHTML = `
-             <div class="menu-item" id="btn-highlight">
-               <span class="menu-icon">\${icons.highlight}</span>
-               Highlight
-             </div>
-             <div class="menu-item" id="btn-assign">
-               <span class="menu-icon">\${icons.assign}</span>
-               Character
-             </div>
-             <div class="menu-item" id="btn-copy">
-               <span class="menu-icon">\${icons.copy}</span>
-               Copy
+            // Inject Menu
+            var menu = document.createElement('div');
+            menu.id = 'custom-menu';
+            menu.innerHTML = `
+              <div class="menu-item" id="btn-highlight" style="grid-column: span 2;">
+                \${icons.highlight}
               </div>
-              <div class="menu-item" id="btn-share">
-                <span class="menu-icon">\${icons.share}</span>
-                Share
+              <div class="menu-item" id="btn-assign">
+                \${icons.assign}
+              </div>
+              <div class="menu-item" id="btn-copy">
+                \${icons.copy}
+              </div>
+             `;
+            // Adjust Main Menu Grid (2x2, highlight spans top)
+            menu.style.gridTemplateColumns = '43px 43px';
+            menu.style.gridTemplateRows = '43px 43px';
+            menu.style.height = '110px'; 
+            menu.style.width = '110px'; 
+            document.body.appendChild(menu);
+            
+            // Highlight Context Menu
+            var hlMenu = document.createElement('div');
+            hlMenu.id = 'highlight-menu';
+            hlMenu.style.cssText = menu.style.cssText; 
+            hlMenu.innerHTML = `
+              <div class="menu-item" id="btn-hl-assign">
+                \${icons.assign}
+              </div>
+              <div class="menu-item" id="btn-hl-note">
+                \${icons.note}
+              </div>
+              <div class="menu-item" id="btn-delete">
+                \${icons.delete}
               </div>
             `;
-           document.body.appendChild(menu);
+            // Adjust Highlight Menu Grid (1x3)
+            hlMenu.style.gridTemplateColumns = '1fr 1fr 1fr';
+            hlMenu.style.gridTemplateRows = '1fr';
+            hlMenu.style.height = '60px'; 
+            hlMenu.style.width = '165px'; // increased width for 3 items
+            
+            document.body.appendChild(hlMenu);
+            
+            // Load Saved Highlights
+            console.log("Init started...");
+            
+            // Restore Highlights
+            try {
+                var highlights = ${jsonEncode(highlights.map((h) => {'id': h.id, 'cfi': h.cfi}).toList())};
+                if (highlights && highlights.length > 0) {
+                    console.log("Restoring " + highlights.length + " highlights...");
+                    // Delay slightly to ensure DOM is ready? already in init..
+                    setTimeout(function() {
+                         try {
+                             highlights.forEach(function(h) {
+                                 applyHighlight(h.cfi, h.id);
+                             });
+                             console.log("Highlights restored.");
+                         } catch(e) {
+                             console.log("Error inside highlight loop: " + e);
+                         }
+                    }, 100);
+                } else {
+                    console.log("No highlights to restore.");
+                }
+            } catch(e) {
+                console.log("Error setting up highlights: " + e);
+            }
+            
+            console.log("Init proceeding...");
 
-           // Bind Events
-           document.getElementById('btn-highlight').addEventListener('mousedown', function(e) { handleAction(e, 'highlight'); });
-           document.getElementById('btn-assign').addEventListener('mousedown', function(e) { handleAction(e, 'assign'); });
-           document.getElementById('btn-copy').addEventListener('mousedown', function(e) { handleAction(e, 'copy'); });
-           document.getElementById('btn-share').addEventListener('mousedown', function(e) { handleAction(e, 'share'); });
+             // Bind Events (Main Menu)
+            document.getElementById('btn-highlight').addEventListener('mousedown', function(e) { handleAction(e, 'highlight'); });
+            document.getElementById('btn-assign').addEventListener('mousedown', function(e) { handleAction(e, 'assign'); });
+            document.getElementById('btn-copy').addEventListener('mousedown', function(e) { handleAction(e, 'copy'); });
+            
+            // Bind Events (Highlight Menu)
+            // We use a global currentHighlightId to track what we are acting on
+            document.getElementById('btn-hl-assign').addEventListener('mousedown', function(e) { handleHighlightAction(e, 'assign'); });
+            document.getElementById('btn-hl-note').addEventListener('mousedown', function(e) { handleHighlightAction(e, 'note'); });
+            document.getElementById('btn-delete').addEventListener('mousedown', function(e) { handleHighlightAction(e, 'delete'); });
 
            function getCFI() {
                 var selection = window.getSelection();
@@ -677,87 +807,99 @@ class ReaderHtmlGenerator {
            // Selection Change
            document.addEventListener('selectionchange', function() {
                var selection = window.getSelection();
-               // console.log('Selection change: ' + selection.toString());
+               console.log('Selection change: ' + selection.toString());
                if (selection.rangeCount > 0 && !selection.isCollapsed && selection.toString().trim().length > 0) {
                    var range = selection.getRangeAt(0);
                    var rect = range.getBoundingClientRect();
+                   console.log("DBG: Selection Active. Rect: " + rect.left + "," + rect.top + " W:" + rect.width);
                    showMenu(rect);
                } else {
+                   console.log("DBG: Selection Empty or Collapsed");
                    hideMenu();
                }
            });
-
-           // Initialize Observers
-           if (${scrollMode == ReaderScrollMode.vertical}) {
-               setupVerticalObservers();
-           } else {
-               // Horizontal Observers
-               setupHorizontalObservers();
-           }
-                      // Scroll restore
-            var restoreDelay = 500; // Increased to 500ms
-            
-            if (initialProgress === 'END') {
-                console.log("Restoring to END");
-                setTimeout(function() {
-                    if (${scrollMode == ReaderScrollMode.horizontal}) {
-                         var container = document.getElementById('reader-content');
-                         if (container) container.scrollLeft = container.scrollWidth;
+            try {
+                // Initialize Observers
+                if (${scrollMode == ReaderScrollMode.vertical}) {
+                    if (typeof setupVerticalObservers === 'function') {
+                        setupVerticalObservers();
                     } else {
-                         window.scrollTo(0, document.body.scrollHeight);
+                        console.log("Error: setupVerticalObservers not defined");
                     }
-                    document.body.classList.remove('loading');
-                    isRestoring = false; // Enable Saving
-                }, restoreDelay);
-                
-            } else if (initialScrollAnchor) {
-                setTimeout(function() {
-                    var el = document.getElementById(initialScrollAnchor);
-                    if (el) {
-                        el.scrollIntoView();
-                    }
-                    document.body.classList.remove('loading');
-                    isRestoring = false; // Enable Saving
-                }, restoreDelay);
-            } else if (initialProgress && initialProgress !== '') {
-                // Restore logic
-                if (initialProgress.includes('/') || initialProgress.startsWith('/')) {
-                    console.log("Restoring CFI Path: " + initialProgress);
-                    setTimeout(function() { 
-                        restorePath(initialProgress); 
-                        document.body.classList.remove('loading');
-                        isRestoring = false; // Enable Saving
-                    }, restoreDelay);
                 } else {
-                    // Legacy Percent
-                    var pct = parseFloat(initialProgress);
-                    if (pct > 0) {
-                        setTimeout(function() {
-                             if (${scrollMode == ReaderScrollMode.horizontal}) {
-                                var container = document.getElementById('reader-content');
-                                if (container) container.scrollLeft = container.scrollWidth * pct;
-                             } else {
-                                window.scrollTo(0, (document.body.scrollHeight - window.innerHeight) * pct);
-                             }
-                             document.body.classList.remove('loading');
-                             isRestoring = false; // Enable Saving
-                        }, restoreDelay);
+                    // Horizontal Observers
+                    if (typeof setupHorizontalObservers === 'function') {
+                         setupHorizontalObservers();
                     } else {
-                        document.body.classList.remove('loading');
-                        isRestoring = false; // Enable Saving
+                         console.log("Error: setupHorizontalObservers not defined");
                     }
                 }
-            } else {
-                // No restore needed
+                           // Scroll restore
+                 var restoreDelay = 500; // Increased to 500ms
+                 
+                 if (initialProgress === 'END') {
+                     console.log("Restoring to END");
+                     setTimeout(function() {
+                         if (${scrollMode == ReaderScrollMode.horizontal}) {
+                              var container = document.getElementById('reader-content');
+                              if (container) container.scrollLeft = container.scrollWidth;
+                         } else {
+                              window.scrollTo(0, document.body.scrollHeight);
+                         }
+                         document.body.classList.remove('loading');
+                         isRestoring = false; // Enable Saving
+                     }, restoreDelay);
+                     
+                 } else if (initialScrollAnchor) {
+                     setTimeout(function() {
+                         var el = document.getElementById(initialScrollAnchor);
+                         if (el) {
+                             el.scrollIntoView();
+                         }
+                         document.body.classList.remove('loading');
+                         isRestoring = false; // Enable Saving
+                     }, restoreDelay);
+                 } else if (initialProgress && initialProgress !== '') {
+                     // Restore logic
+                     if (initialProgress.includes('/') || initialProgress.startsWith('/')) {
+                         console.log("Restoring CFI Path: " + initialProgress);
+                         setTimeout(function() { 
+                             restorePath(initialProgress); 
+                             document.body.classList.remove('loading');
+                             isRestoring = false; // Enable Saving
+                         }, restoreDelay);
+                     } else {
+                         // Legacy Percent
+                         var pct = parseFloat(initialProgress);
+                         if (pct > 0) {
+                             setTimeout(function() {
+                                  if (${scrollMode == ReaderScrollMode.horizontal}) {
+                                     var container = document.getElementById('reader-content');
+                                     if (container) container.scrollLeft = container.scrollWidth * pct;
+                                  } else {
+                                     window.scrollTo(0, (document.body.scrollHeight - window.innerHeight) * pct);
+                                  }
+                                  document.body.classList.remove('loading');
+                                  isRestoring = false; // Enable Saving
+                             }, restoreDelay);
+                         } else {
+                             document.body.classList.remove('loading');
+                             isRestoring = false; // Enable Saving
+                         }
+                     }
+                 } else {
+                     // No restore needed
+                     document.body.classList.remove('loading');
+                     isRestoring = false; // Enable Saving
+                 }
+            } catch(e) {
+                console.log("Error in observer/restore setup: " + e);
+                // Emergency cleanup
                 document.body.classList.remove('loading');
-                isRestoring = false; // Enable Saving
+                isRestoring = false;
             }
            
-           // Highlights
-           var highlights = $highlightsJson;
-           if (highlights && highlights.length > 0) {
-               highlights.forEach(function(h) { applyHighlight(h.cfi, h.id); });
-           }
+
         };
         
         if (document.readyState === 'loading') {
@@ -1073,6 +1215,13 @@ class ReaderHtmlGenerator {
               }, {passive: false});
               
               document.addEventListener('touchmove', function(e) {
+                   // if text is selected, let the native drag happen (don't scroll/swipe)
+                   var selection = window.getSelection();
+                   if (selection && !selection.isCollapsed) {
+                       isDragging = false; // Cancel drag so touchend doesn't trigger swipe
+                       return;
+                   }
+
                    if (inputBlocked) {
                        e.preventDefault(); 
                        return;
@@ -1173,7 +1322,10 @@ class ReaderHtmlGenerator {
                       e.preventDefault();
                       return;
                   }
-                  
+
+                  var selection = window.getSelection();
+                  if (selection && !selection.isCollapsed) return;
+                   
                   if (!isDragging) return;
                   isDragging = false;
                   
@@ -1348,25 +1500,42 @@ class ReaderHtmlGenerator {
          }
 
         
-        function showMenu(rect) {
+        // Global for Highlight Menu
+        var currentHighlightId = null;
 
+        function showMenu(rect) {
+            console.log("DBG: showMenu called");
+            // Hide highlight menu if open
+            hideHighlightMenu();
+            
             var menu = document.getElementById('custom-menu');
-            if (!menu) return;
+            if (!menu) {
+                console.log("DBG: Menu element not found!");
+                return;
+            }
             
             var scrollX = window.scrollX || window.pageXOffset;
             var scrollY = window.scrollY || window.pageYOffset;
             
+            
+            
             menu.style.display = 'grid';
+            // Trigger reflow
+            menu.offsetHeight;
+            menu.classList.add('visible');
             
             // Calculate position
             var menuWidth = menu.offsetWidth;
             var menuHeight = menu.offsetHeight;
             
             var top = rect.top - menuHeight - 15 + scrollY;
+            // Pad the interaction area above
+            
+            // Adjust left to center
             var left = rect.left + (rect.width / 2) + scrollX;
             
             // Check bounds
-            if (top < scrollY + 10) {
+            if (top < scrollY + 40) {
                 // Not enough space above, show below
                 top = rect.bottom + 15 + scrollY;
                 menu.classList.add('below');
@@ -1384,7 +1553,15 @@ class ReaderHtmlGenerator {
 
         function hideMenu() {
             var menu = document.getElementById('custom-menu');
-            if (menu) menu.style.display = 'none';
+            if (menu) {
+                menu.classList.remove('visible');
+                // Wait for transition?
+                setTimeout(function() {
+                    if (!menu.classList.contains('visible')) {
+                        menu.style.display = 'none';
+                    }
+                }, 200);
+            }
         }
         
         function isMenuOpen() {
@@ -1409,16 +1586,72 @@ class ReaderHtmlGenerator {
              return null;
         }
 
+        function showHighlightMenu(rect, id) {
+             var menu = document.getElementById('highlight-menu');
+             if (!menu) return;
+             
+             currentHighlightId = id;
+             
+             var scrollX = window.scrollX || window.pageXOffset;
+             var scrollY = window.scrollY || window.pageYOffset;
+             
+             menu.style.display = 'grid'; 
+             menu.offsetHeight;
+             menu.classList.add('visible');
+             
+             var menuWidth = 165; 
+             var menuHeight = 60; 
+             
+             var top = rect.top - menuHeight - 15 + scrollY;
+             var left = rect.left + (rect.width / 2) + scrollX;
+             
+             // Check bounds
+             if (top < scrollY + 40) {
+                 top = rect.bottom + 15 + scrollY;
+                 menu.classList.add('below');
+             } else {
+                 menu.classList.remove('below');
+             }
+             
+             if (left - (menuWidth / 2) < 10) left = (menuWidth / 2) + 10;
+             if (left + (menuWidth / 2) > window.innerWidth - 10) left = window.innerWidth - 10 - (menuWidth / 2);
+ 
+             menu.style.top = top + 'px';
+             menu.style.left = left - (menuWidth / 2) + 'px'; 
+        }
+        
+        function hideHighlightMenu() {
+            var menu = document.getElementById('highlight-menu');
+             if (menu) {
+                 menu.classList.remove('visible');
+                 setTimeout(function() {
+                     if (!menu.classList.contains('visible')) {
+                         menu.style.display = 'none';
+                     }
+                 }, 100);
+             }
+             currentHighlightId = null;
+        }
+
+        function handleHighlightAction(e, action) {
+             e.preventDefault();
+             e.stopPropagation();
+             
+             if (window.flutter_inappwebview && currentHighlightId) {
+                 window.flutter_inappwebview.callHandler('onHighlightAction', action, currentHighlightId);
+             }
+             hideHighlightMenu();
+        }
+
         function applyHighlight(cfi, id) {
-            console.log("Applying highlight: " + id + " path: " + cfi);
+            console.log("Applying highlight: " + id);
             try {
-                // Parse CFI if it's a JSON string
+                // Parse CFI
                 var pathObj = cfi;
                 if (typeof cfi === 'string') {
                     if (cfi.startsWith('{')) {
                         pathObj = JSON.parse(cfi);
                     } else {
-                        // Legacy path string? Not supported for highlights usually
                         return;
                     }
                 }
@@ -1426,40 +1659,116 @@ class ReaderHtmlGenerator {
                 var startNode = getNodeByPath(pathObj.startPath);
                 var endNode = getNodeByPath(pathObj.endPath);
                 
-                if (startNode && endNode) {
-                    var range = document.createRange();
-                    
-                    // Handle Text Nodes vs Elements
-                    if (startNode.nodeType === 3) {
-                        range.setStart(startNode, pathObj.startOffset);
-                    } else {
-                        range.setStart(startNode, 0); 
-                    }
-                    
-                    if (endNode.nodeType === 3) {
-                        range.setEnd(endNode, pathObj.endOffset);
-                    } else {
-                        range.setEnd(endNode, 0); 
-                    }
-                    
-                    var span = document.createElement('span');
-                    span.className = 'highlight';
-                    span.dataset.id = id;
-                    span.style.backgroundColor = 'rgba(255, 235, 59, 0.5)'; // Yellow
-                    span.style.cursor = 'pointer';
-                    
-                    span.onclick = function(e) {
-                         e.stopPropagation();
-                         // Show menu or delete option?
-                         console.log("Clicked highlight " + id);
-                    };
-                    
-                    range.surroundContents(span);
-                } else {
+                if (!startNode || !endNode) {
                     console.log("Nodes not found for highlight " + id);
+                    return;
                 }
+
+                var range = document.createRange();
+                
+                // Set Start
+                if (startNode.nodeType === 3) {
+                     // Clamp offset
+                    var maxStart = startNode.length;
+                    var sOffset = pathObj.startOffset;
+                    if (sOffset > maxStart) sOffset = maxStart;
+                    if (sOffset < 0) sOffset = 0;
+                    range.setStart(startNode, sOffset);
+                } else {
+                    range.setStart(startNode, 0); 
+                }
+                
+                // Set End
+                if (endNode.nodeType === 3) {
+                     // Clamp offset
+                    var maxEnd = endNode.length;
+                    var eOffset = pathObj.endOffset;
+                    if (eOffset > maxEnd) eOffset = maxEnd;
+                    if (eOffset < 0) eOffset = 0;
+                    range.setEnd(endNode, eOffset);
+                } else {
+                    range.setEnd(endNode, 0); 
+                }
+
+                // Collect all text nodes in the range
+                var textNodes = [];
+                var treeWalker = document.createTreeWalker(
+                    range.commonAncestorContainer,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode: function(node) {
+                            if (range.intersectsNode(node)) {
+                                return NodeFilter.FILTER_ACCEPT;
+                            }
+                            return NodeFilter.FILTER_REJECT;
+                        }
+                    },
+                    false
+                );
+                
+                // If start/end are same, TreeWalker might skip if we aren't careful with root
+                // But commonAncestor should cover it. 
+                // Special check: if commonAncestor is the text node itself
+                if (range.commonAncestorContainer.nodeType === 3) {
+                   textNodes.push(range.commonAncestorContainer);
+                } else {
+                    while (treeWalker.nextNode()) {
+                        textNodes.push(treeWalker.currentNode);
+                    }
+                }
+
+                console.log("Found " + textNodes.length + " text nodes to highlight");
+
+                textNodes.forEach(function(node) {
+                    var subRange = document.createRange();
+                    subRange.selectNodeContents(node);
+
+                    // Clamp start
+                    if (node === startNode && startNode.nodeType === 3) {
+                        var maxStart = startNode.length;
+                        var sOffset = pathObj.startOffset;
+                        if (sOffset > maxStart) sOffset = maxStart;
+                        if (sOffset < 0) sOffset = 0;
+                        subRange.setStart(node, sOffset);
+                    }
+                    
+                    // Clamp end
+                    if (node === endNode && endNode.nodeType === 3) {
+                        var maxEnd = endNode.length;
+                        var eOffset = pathObj.endOffset;
+                        if (eOffset > maxEnd) eOffset = maxEnd;
+                        if (eOffset < 0) eOffset = 0;
+                        subRange.setEnd(node, eOffset);
+                    }
+                    
+                    // Verify validity (not collapsed)
+                    if (!subRange.collapsed && subRange.toString().length > 0) {
+                        var span = document.createElement('span');
+                        span.className = 'highlight';
+                        span.dataset.id = id;
+                        span.style.backgroundColor = 'rgba(255, 235, 59, 0.5)';
+                        span.style.cursor = 'pointer';
+                        
+                        span.onclick = function(e) {
+                             e.stopPropagation();
+                             console.log("Clicked highlight " + id);
+                             
+                             // Show Menu for Highlight
+                             // Use bounding client rect of the span
+                             var rect = span.getBoundingClientRect();
+                             showHighlightMenu(rect, id);
+                        };
+                        
+                        try {
+                            subRange.surroundContents(span);
+                        } catch (e) {
+                            console.log("Error wrapping node: " + e);
+                        }
+                    }
+                });
+
             } catch (e) {
-                console.log("Error applying highlight: " + e);
+                console.log("Error applyHighlight: " + e);
             }
         }
         

@@ -237,6 +237,20 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           endAnchor = group[indexInGroup + 1].Anchor;
         }
 
+        // Fetch highlights for this chapter
+        final allHighlights = await ref
+            .read(bookRepositoryProvider)
+            .getHighlights(widget.book.id);
+        final chapterHighlights = allHighlights.where((h) {
+          if (h.cfi == null) return false;
+          try {
+            final Map<String, dynamic> data = jsonDecode(h.cfi!);
+            return data['chapterIndex'] == index;
+          } catch (e) {
+            return false;
+          }
+        }).toList();
+
         // Generate HTML
         final html = ReaderHtmlGenerator.generateHtml(
           content,
@@ -246,7 +260,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           scrollMode: _scrollMode,
           currentChapterIndex: index,
           initialProgress: targetCfi,
-          highlights: [],
+          highlights: chapterHighlights,
           spineIndex: spineIndex,
           anchors: [],
           scrollToAnchor: startAnchor,
@@ -416,6 +430,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                       }
                     },
                   );
+
+                  controller.addJavaScriptHandler(
+                    handlerName: 'onHighlightAction',
+                    callback: (args) {
+                      if (args.length >= 2) {
+                        _handleHighlightAction(
+                          args[0].toString(), // action
+                          args[1].toString(), // id
+                        );
+                      }
+                    },
+                  );
                   _loadChapter(_currentChapterIndex);
                 },
               ),
@@ -468,6 +494,249 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     );
   }
 
+  Future<void> _handleHighlightAction(String action, String id) async {
+    switch (action) {
+      case 'delete':
+        await ref.read(bookRepositoryProvider).deleteHighlight(id);
+        // Remove from UI (reload or JS remove?)
+        // Easiest is to just reload the chapter or inject JS to remove the span
+        // For now, reload is safest to ensure consistency, but flash might be annoying.
+        // Let's try JS removal first? No, we need to locate all spans with that ID.
+        await _webViewController?.evaluateJavascript(
+          source:
+              """
+          var spans = document.querySelectorAll('span.highlight[data-id="$id"]');
+          spans.forEach(function(span) {
+              var parent = span.parentNode;
+              while (span.firstChild) parent.insertBefore(span.firstChild, span);
+              parent.removeChild(span);
+          });
+        """,
+        );
+        break;
+      case 'note':
+        if (mounted) {
+          _showAddNoteToHighlightDialog(context, id);
+        }
+        break;
+      case 'assign':
+        if (mounted) {
+          _showAssignCharacterDialog(context, id);
+        }
+        break;
+    }
+  }
+
+  Future<void> _showAddNoteToHighlightDialog(
+    BuildContext context,
+    String highlightId,
+  ) async {
+    final controller = TextEditingController();
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Add Note to Highlight'),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: 'Enter your thoughts...',
+            border: OutlineInputBorder(),
+          ),
+          maxLines: 3,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (controller.text.isNotEmpty) {
+                // Save note linked to highlight
+                // We use BookNotes table but with quoteId
+                await ref
+                    .read(bookRepositoryProvider)
+                    .addBookNote(
+                      widget.book.id,
+                      controller.text,
+                      quoteId: highlightId,
+                    );
+
+                if (mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Note attached to highlight')),
+                  );
+                }
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showAssignCharacterDialog(BuildContext context, String highlightId) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Assign to Character'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: Consumer(
+            builder: (context, ref, child) {
+              final charRepo = ref.watch(characterRepositoryProvider);
+              return StreamBuilder<List<Character>>(
+                stream: charRepo.watchAllCharacters(),
+                builder: (context, snapshot) {
+                  if (!snapshot.hasData) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+                  final characters = snapshot.data!;
+                  // Show list + Create New option
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.add, color: Colors.blue),
+                        title: const Text(
+                          'Create New Character',
+                          style: TextStyle(
+                            color: Colors.blue,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          _showCreateCharacterDialog(context, highlightId);
+                        },
+                      ),
+                      const Divider(),
+                      if (characters.isEmpty)
+                        const Padding(
+                          padding: EdgeInsets.all(8.0),
+                          child: Text('No characters yet.'),
+                        )
+                      else
+                        Flexible(
+                          child: ListView.builder(
+                            shrinkWrap: true,
+                            itemCount: characters.length,
+                            itemBuilder: (context, index) {
+                              final char = characters[index];
+                              return ListTile(
+                                leading: CircleAvatar(
+                                  backgroundImage: char.imagePath != null
+                                      ? FileImage(File(char.imagePath!))
+                                      : null,
+                                  child: char.imagePath == null
+                                      ? Text(char.name[0].toUpperCase())
+                                      : null,
+                                ),
+                                title: Text(char.name),
+                                onTap: () async {
+                                  // Assign highlight to character
+                                  await ref
+                                      .read(bookRepositoryProvider)
+                                      .updateHighlightCharacter(
+                                        highlightId,
+                                        char.id,
+                                      );
+                                  if (mounted) {
+                                    Navigator.pop(context);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Assigned to ${char.name}',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
+                              );
+                            },
+                          ),
+                        ),
+                    ],
+                  );
+                },
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showCreateCharacterDialog(
+    BuildContext context,
+    String? assignHighlightId,
+  ) async {
+    final nameController = TextEditingController();
+    // If we have a highlight, maybe pre-fill name if it's short?
+    if (assignHighlightId != null) {
+      // Get highlight text (async lookup needed? or passing it?)
+      // Ideally we passed text, but we only have ID here.
+      // Let's keep it empty for now or user can type.
+    }
+
+    await showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('New Character'),
+        content: TextField(
+          controller: nameController,
+          decoration: const InputDecoration(
+            labelText: 'Character Name',
+            border: OutlineInputBorder(),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (nameController.text.trim().isNotEmpty) {
+                final charId = await ref
+                    .read(characterRepositoryProvider)
+                    .createCharacter(
+                      name: nameController.text.trim(),
+                      originBookId: widget.book.id,
+                    );
+
+                if (assignHighlightId != null && mounted) {
+                  await ref
+                      .read(bookRepositoryProvider)
+                      .updateHighlightCharacter(assignHighlightId, charId);
+                }
+
+                if (mounted) {
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Character created and assigned!'),
+                    ),
+                  );
+                }
+              }
+            },
+            child: const Text('Create'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _handleMenuAction(String action, String cfi, String text) async {
     switch (action) {
       case 'highlight':
@@ -490,6 +759,13 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         break;
       case 'share':
         await Share.share(text);
+        break;
+      case 'define':
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Dictionary lookup not implemented')),
+          );
+        }
         break;
     }
   }
@@ -630,130 +906,5 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
     // Unblock JS
     _toggleInputBlocking(false);
-  }
-
-  void _showHighlightOptions(BuildContext context, String highlightId) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.person_add),
-              title: const Text('Assign to Character'),
-              onTap: () {
-                Navigator.pop(context);
-                _showAssignCharacterDialog(context, highlightId);
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete, color: Colors.red),
-              title: const Text(
-                'Delete Highlight',
-                style: TextStyle(color: Colors.red),
-              ),
-              onTap: () async {
-                Navigator.pop(context);
-                await ref
-                    .read(bookRepositoryProvider)
-                    .deleteHighlight(highlightId);
-                _webViewController?.evaluateJavascript(
-                  source: "removeHighlight('$highlightId'); null;",
-                );
-                setState(() {
-                  // _currentHighlights.removeWhere((h) => h.id == highlightId);
-                });
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showAssignCharacterDialog(BuildContext context, String highlightId) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Assign to Character'),
-        content: SizedBox(
-          width: double.maxFinite,
-          child: Consumer(
-            builder: (context, ref, child) {
-              final charRepo = ref.watch(characterRepositoryProvider);
-              return StreamBuilder<List<Character>>(
-                stream: charRepo.watchAllCharacters(),
-                builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final characters = snapshot.data!;
-                  if (characters.isEmpty) {
-                    return Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Text('No characters created yet.'),
-                        const SizedBox(height: 16),
-                        OutlinedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Please create a character first in the Characters tab.',
-                                ),
-                              ),
-                            );
-                          },
-                          child: const Text('Create Character'),
-                        ),
-                      ],
-                    );
-                  }
-                  return ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: characters.length,
-                    itemBuilder: (context, index) {
-                      final char = characters[index];
-                      return ListTile(
-                        leading: CircleAvatar(
-                          backgroundImage: char.imagePath != null
-                              ? FileImage(File(char.imagePath!))
-                              : null,
-                          child: char.imagePath == null
-                              ? Text(char.name[0])
-                              : null,
-                        ),
-                        title: Text(char.name),
-                        onTap: () async {
-                          await ref
-                              .read(bookRepositoryProvider)
-                              .assignQuoteToCharacter(highlightId, char.id);
-                          if (context.mounted) {
-                            Navigator.pop(context);
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text('Assigned to ${char.name}'),
-                              ),
-                            );
-                          }
-                        },
-                      );
-                    },
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
   }
 }

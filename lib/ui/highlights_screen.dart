@@ -6,6 +6,8 @@ import '../data/database.dart';
 import '../data/character_repository.dart';
 import 'dart:io';
 import 'reader_screen.dart';
+import 'book_journal_screen.dart'; // Added
+import 'widgets/link_note_dialog.dart';
 import '../providers.dart';
 
 class HighlightsTab extends ConsumerWidget {
@@ -142,93 +144,168 @@ class HighlightsTab extends ConsumerWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (context) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
+        initialChildSize: 0.45,
         minChildSize: 0.3,
-        maxChildSize: 0.9,
+        maxChildSize: 0.8,
         expand: false,
         builder: (context, scrollController) => SingleChildScrollView(
           controller: scrollController,
           padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Highlight Details',
-                style: Theme.of(context).textTheme.titleLarge,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                '"${item.quote.textContent}"',
-                style: const TextStyle(fontSize: 16, height: 1.5),
-              ),
-              const SizedBox(height: 24),
-              Row(
+          child: StreamBuilder<List<BookNote>>(
+            stream: ref
+                .read(bookRepositoryProvider)
+                .watchNotesForBook(item.book.id),
+            builder: (context, snapshot) {
+              final notes = snapshot.data ?? [];
+              final linkedNote = notes.cast<BookNote?>().firstWhere(
+                (n) => n?.quoteId == item.quote.id,
+                orElse: () => null,
+              );
+
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Icon(Icons.book, size: 20, color: Colors.grey),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      item.book.title,
-                      style: Theme.of(context).textTheme.titleMedium,
+                  Text(
+                    'Highlight Details',
+                    style: Theme.of(context).textTheme.titleLarge,
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    item.book.title,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: Theme.of(context).primaryColor,
                     ),
                   ),
+                  const SizedBox(height: 24),
+                  Text(
+                    '"${item.quote.textContent}"',
+                    style: const TextStyle(fontSize: 16, height: 1.5),
+                  ),
+                  const SizedBox(height: 16),
+                  if (item.quote.characterId != null) ...[
+                    // We can resolve character name if needed, but for now simple indicator
+                    const Row(
+                      children: [
+                        Icon(Icons.person, size: 16, color: Colors.grey),
+                        SizedBox(width: 8),
+                        Text(
+                          'Assigned to a character',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const SizedBox(height: 24),
+
+                  // Unified Icon Row
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: [
+                      // Character Link Button
+                      IconButton.filledTonal(
+                        onPressed: () {
+                          Navigator.pop(context);
+                          _showAssignCharacterDialog(context, ref, item);
+                        },
+                        icon: Icon(
+                          item.quote.characterId != null
+                              ? Icons.person
+                              : Icons.person_add,
+                        ),
+                        tooltip: item.quote.characterId != null
+                            ? 'Assigned to Character'
+                            : 'Assign Character',
+                      ),
+
+                      // Journal Link Button
+                      IconButton.filledTonal(
+                        onPressed: () {
+                          if (linkedNote != null) {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) => BookJournalScreen(
+                                  bookId: item.book.id,
+                                  bookTitle: item.book.title,
+                                  initialTab: 0,
+                                ),
+                              ),
+                            );
+                          } else {
+                            showDialog(
+                              context: context,
+                              builder: (context) => LinkNoteDialog(
+                                bookId: item.book.id,
+                                highlight: item.quote,
+                              ),
+                            );
+                          }
+                        },
+                        icon: Icon(
+                          linkedNote != null
+                              ? Icons.history_edu
+                              : Icons.edit_note,
+                        ),
+                        tooltip: linkedNote != null
+                            ? 'View Journal Entry'
+                            : 'Link to Journal Entry',
+                        style: IconButton.styleFrom(
+                          backgroundColor: linkedNote != null
+                              ? Theme.of(context).colorScheme.primaryContainer
+                              : null,
+                          foregroundColor: linkedNote != null
+                              ? Theme.of(context).colorScheme.onPrimaryContainer
+                              : null,
+                        ),
+                      ),
+
+                      // Delete Button
+                      IconButton.filledTonal(
+                        onPressed: () async {
+                          await ref
+                              .read(bookRepositoryProvider)
+                              .deleteHighlight(item.quote.id);
+                          if (context.mounted) Navigator.pop(context);
+                        },
+                        icon: const Icon(Icons.delete),
+                        tooltip: 'Delete Highlight',
+                        style: IconButton.styleFrom(
+                          backgroundColor: Theme.of(
+                            context,
+                          ).colorScheme.errorContainer,
+                          foregroundColor: Theme.of(
+                            context,
+                          ).colorScheme.onErrorContainer,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 16),
+                  if (item.book.isDownloaded)
+                    SizedBox(
+                      width: double.infinity,
+                      child: FilledButton.icon(
+                        onPressed: () {
+                          Navigator.pop(context); // Close modal
+                          // Navigate to reader
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) =>
+                                  ReaderScreen(book: item.book),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.arrow_forward),
+                        label: const Text('Go to Page'),
+                      ),
+                    ),
                 ],
-              ),
-              const SizedBox(height: 32),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context); // Close modal
-                        _showAssignCharacterDialog(context, ref, item);
-                      },
-                      icon: const Icon(Icons.person_add),
-                      label: const Text('Assign Character'),
-                    ),
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: FilledButton.icon(
-                      onPressed: () {
-                        Navigator.pop(context); // Close modal
-                        // Navigate to reader
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => ReaderScreen(book: item.book),
-                          ),
-                        );
-                      },
-                      icon: const Icon(Icons.arrow_forward),
-                      label: const Text('Go to Page'),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                width: double.infinity,
-                child: TextButton.icon(
-                  onPressed: () async {
-                    await ref
-                        .read(bookRepositoryProvider)
-                        .deleteHighlight(item.quote.id);
-                    if (context.mounted) {
-                      Navigator.pop(context); // Close modal
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Highlight deleted')),
-                      );
-                    }
-                  },
-                  icon: const Icon(Icons.delete, color: Colors.red),
-                  label: const Text(
-                    'Delete Highlight',
-                    style: TextStyle(color: Colors.red),
-                  ),
-                ),
-              ),
-            ],
+              );
+            },
           ),
         ),
       ),

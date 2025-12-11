@@ -4,6 +4,7 @@ import 'data/database.dart';
 import 'data/book_repository.dart';
 import 'data/character_repository.dart';
 import 'data/remote/opds_service.dart';
+import 'data/remote/local_ebooks_service.dart';
 import 'data/remote/gutendex_service.dart';
 import 'data/download_manager.dart';
 import 'services/epub_service.dart';
@@ -26,9 +27,12 @@ final dioProvider = Provider<Dio>((ref) {
 
 final opdsServiceProvider = Provider<OpdsService>((ref) {
   final service = OpdsService(ref.read(dioProvider));
-  // TODO: Move to secure storage or settings
-  service.setCredentials('joshua.h.eastman@gmail.com', 'IxThYstaE4984');
+  // Credentials removed as we are migrating to offline DB
   return service;
+});
+
+final localEbooksServiceProvider = Provider<LocalEbooksService>((ref) {
+  return LocalEbooksService();
 });
 
 final gutendexServiceProvider = Provider<GutendexService>((ref) {

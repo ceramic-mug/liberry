@@ -6,7 +6,8 @@ import '../data/remote/remote_book.dart';
 import '../data/harvard_classics.dart';
 import 'collections_screen.dart';
 import 'gutenberg_screen.dart';
-import 'opds_catalog_screen.dart';
+import 'standard_ebooks_screen.dart';
+import 'download_splash_screen.dart';
 
 import '../providers.dart';
 
@@ -34,22 +35,13 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
   }
 
   Future<void> _loadStandardEbooks() async {
-    try {
-      final opdsService = ref.read(opdsServiceProvider);
-      final books = await opdsService.fetchNewReleases();
-      if (mounted) {
-        setState(() {
-          _standardEbooks = books;
-          _isLoadingStandard = false;
-        });
-      }
-    } catch (e) {
-      print('Error loading Standard Ebooks: $e');
-      if (mounted) {
-        setState(() {
-          _isLoadingStandard = false;
-        });
-      }
+    // Standard Ebooks is now offline-first and doesn't support "New Releases" feed in the same way yet.
+    // We just keep the list empty initially or when search is cleared.
+    if (mounted) {
+      setState(() {
+        _standardEbooks = [];
+        _isLoadingStandard = false;
+      });
     }
   }
 
@@ -73,8 +65,8 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
 
     // Search Standard Ebooks
     try {
-      final opdsService = ref.read(opdsServiceProvider);
-      final books = await opdsService.searchBooks(query);
+      final localService = ref.read(localEbooksServiceProvider);
+      final books = await localService.searchBooks(query);
       if (mounted) {
         setState(() {
           _standardEbooks = books;
@@ -180,10 +172,7 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
                         Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (context) => const OpdsCatalogScreen(
-                              title: 'Standard Ebooks',
-                              showStandardEbooksTabs: true,
-                            ),
+                            builder: (context) => const StandardEbooksScreen(),
                           ),
                         );
                       },
@@ -550,32 +539,13 @@ class RemoteBookTile extends ConsumerWidget {
         trailing: book.downloadUrl != null
             ? IconButton(
                 icon: const Icon(Icons.download),
-                onPressed: () async {
-                  try {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(content: Text('Downloading...')),
-                    );
-
-                    await ref
-                        .read(downloadManagerProvider)
-                        .downloadBook(
-                          book.downloadUrl!,
-                          book.title,
-                          coverUrl: book.coverUrl,
-                        );
-
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Download complete!')),
-                      );
-                    }
-                  } catch (e) {
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Download failed: $e')),
-                      );
-                    }
-                  }
+                onPressed: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => DownloadSplashScreen(book: book),
+                      fullscreenDialog: true,
+                    ),
+                  );
                 },
               )
             : null,

@@ -10,7 +10,7 @@ class DownloadManager {
 
   DownloadManager(this._dio, this._bookRepo);
 
-  Future<void> downloadBook(
+  Future<String> downloadBook(
     String url,
     String title, {
     String? coverUrl,
@@ -24,7 +24,7 @@ class DownloadManager {
 
       // Add to repository
       // FIX: Store only the filename (relative path) in DB to survive container UUID changes on iOS
-      await _bookRepo.addBook(filename, remoteCoverUrl: coverUrl);
+      return await _bookRepo.addBook(filename, remoteCoverUrl: coverUrl);
     } catch (e) {
       rethrow;
     }

@@ -5,6 +5,8 @@ import 'package:drift/native.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:uuid/uuid.dart';
+
 part 'database.g.dart';
 
 class Books extends Table {
@@ -17,8 +19,13 @@ class Books extends Table {
 
   // New columns for Library v2
   TextColumn get group =>
-      text().nullable()(); // 'reading' or 'bookshelf' (null = default/reading)
-  BoolColumn get isRead => boolean().withDefault(const Constant(false))();
+      text().nullable()(); // Now represents 'location': 'desk' or 'bookshelf'
+  TextColumn get status => text().withDefault(
+    const Constant('not_started'),
+  )(); // 'not_started', 'reading', 'read'
+  BoolColumn get isRead => boolean().withDefault(
+    const Constant(false),
+  )(); // Keeping for legacy/backup, but 'status' should be primary
   IntColumn get rating => integer().nullable()(); // 0-5
   TextColumn get userNotes => text().nullable()();
   TextColumn get downloadUrl => text().nullable()();
@@ -68,12 +75,24 @@ class Quotes extends Table {
   Set<Column> get primaryKey => {id};
 }
 
-@DriftDatabase(tables: [Books, ReadingProgress, Characters, Quotes])
+class BookNotes extends Table {
+  TextColumn get id => text()(); // UUID
+  TextColumn get bookId => text().references(Books, #id)();
+  TextColumn get quoteId =>
+      text().nullable().references(Quotes, #id)(); // Link to highlight
+  TextColumn get content => text()();
+  DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+
+  @override
+  Set<Column> get primaryKey => {id};
+}
+
+@DriftDatabase(tables: [Books, ReadingProgress, Characters, Quotes, BookNotes])
 class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 5; // Updated to 5
+  int get schemaVersion => 8; // Updated to 8
 
   @override
   MigrationStrategy get migration {
@@ -120,6 +139,62 @@ class AppDatabase extends _$AppDatabase {
           await m.addColumn(books, books.language);
           await m.addColumn(books, books.publishedDate);
           await m.addColumn(books, books.isDownloaded);
+        }
+        if (from < 6) {
+          // Add BookNotes table
+          await m.createTable(bookNotes);
+
+          // Iterate over all books and migrate userNotes to BookNotes
+          final allBooks = await select(books).get();
+          for (final book in allBooks) {
+            if (book.userNotes != null && book.userNotes!.isNotEmpty) {
+              await into(bookNotes).insert(
+                BookNotesCompanion.insert(
+                  id: Uuid().v4(),
+                  bookId: book.id,
+                  content: book.userNotes!,
+                  createdAt: Value(
+                    DateTime.now(),
+                  ), // Or book.addedAt if better? DateTime.now() is safer.
+                ),
+              );
+            }
+          }
+        }
+        if (from < 7) {
+          // Add quoteId to BookNotes
+          await m.addColumn(bookNotes, bookNotes.quoteId);
+        }
+        if (from < 8) {
+          // Add status column
+          await m.addColumn(books, books.status);
+
+          // Migration logic for status and location
+          final allBooks = await select(books).get();
+          for (final book in allBooks) {
+            String newStatus = 'not_started';
+            String newGroup = 'desk'; // Default location
+
+            // Check existing 'group' (legacy location/status mix)
+            final oldGroup = book.group;
+            final isRead = book.isRead;
+
+            if (oldGroup == 'read' || isRead) {
+              newStatus = 'read';
+              newGroup = 'bookshelf';
+            } else if (oldGroup == 'bookshelf') {
+              newStatus =
+                  'not_started'; // Assume not started if just on bookshelf, or could be 'reading' but seemingly 'desk' is reading
+              newGroup = 'bookshelf';
+            } else if (oldGroup == 'reading' || oldGroup == null) {
+              newStatus = 'reading';
+              newGroup = 'desk';
+            }
+
+            await (update(books)..where((t) => t.id.equals(book.id))).write(
+              BooksCompanion(status: Value(newStatus), group: Value(newGroup)),
+            );
+          }
         }
       },
     );

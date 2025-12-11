@@ -10,7 +10,7 @@ import '../data/database.dart';
 import '../providers.dart';
 import 'book_details_screen.dart';
 
-enum SortOption { recent, title, author, dateAdded }
+enum SortOption { title, author, dateAdded, rating }
 
 class LibraryScreen extends ConsumerStatefulWidget {
   final VoidCallback onNavigateToDiscover;
@@ -24,7 +24,7 @@ class LibraryScreen extends ConsumerStatefulWidget {
 class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   String _searchQuery = '';
   bool _isSearching = false;
-  SortOption _sortOption = SortOption.recent;
+  SortOption _sortOption = SortOption.dateAdded;
   final TextEditingController _searchController = TextEditingController();
 
   @override
@@ -40,11 +40,14 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       case SortOption.author:
         return books
           ..sort((a, b) => (a.author ?? '').compareTo(b.author ?? ''));
+      case SortOption.rating:
+        return books..sort((a, b) {
+          final ratingA = a.rating ?? 0;
+          final ratingB = b.rating ?? 0;
+          return ratingB.compareTo(ratingA); // Descending (5 -> 0)
+        });
       case SortOption.dateAdded:
-        return books..sort((a, b) => b.addedAt.compareTo(a.addedAt));
-      case SortOption.recent:
       default:
-        // TODO: Join with ReadingProgress for true "Recently Read".
         return books..sort((a, b) => b.addedAt.compareTo(a.addedAt));
     }
   }
@@ -109,10 +112,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                 itemBuilder: (BuildContext context) =>
                     <PopupMenuEntry<SortOption>>[
                       const PopupMenuItem<SortOption>(
-                        value: SortOption.recent,
-                        child: Text('Recently Added'),
-                      ),
-                      const PopupMenuItem<SortOption>(
                         value: SortOption.title,
                         child: Text('Title'),
                       ),
@@ -124,6 +123,10 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                         value: SortOption.dateAdded,
                         child: Text('Date Added'),
                       ),
+                      const PopupMenuItem<SortOption>(
+                        value: SortOption.rating,
+                        child: Text('Rating'),
+                      ),
                     ],
               ),
             ],
@@ -132,7 +135,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ? null
               : const TabBar(
                   tabs: [
-                    Tab(text: 'Reading'),
+                    Tab(text: 'Desk'),
                     Tab(text: 'Bookshelf'),
                   ],
                 ),
@@ -168,24 +171,35 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
             // 2. Tab Mode
             // Split and Sort
-            final currentlyReading = _sortBooks(
-              books.where((b) => b.group != 'bookshelf').toList(),
+            // Desk: group is 'desk' or legacy 'reading' or null
+            final deskBooks = _sortBooks(
+              books
+                  .where(
+                    (b) =>
+                        b.group == 'desk' ||
+                        b.group == 'reading' ||
+                        b.group == null,
+                  )
+                  .toList(),
             );
+            // Bookshelf: group is 'bookshelf' or legacy 'read'
             final bookshelf = _sortBooks(
-              books.where((b) => b.group == 'bookshelf').toList(),
+              books
+                  .where((b) => b.group == 'bookshelf' || b.group == 'read')
+                  .toList(),
             );
 
             return TabBarView(
               children: [
-                // Reading Tab
-                currentlyReading.isEmpty
-                    ? _buildEmptyState("No books in Reading list.")
-                    : _buildBookGrid(currentlyReading),
+                // Desk Tab - Keep as Grid
+                deskBooks.isEmpty
+                    ? _buildEmptyState("No books on your Desk.")
+                    : _buildBookGrid(deskBooks),
 
-                // Bookshelf Tab
+                // Bookshelf Tab - Switch to List/Spine view
                 bookshelf.isEmpty
                     ? _buildEmptyState("Bookshelf is empty.")
-                    : _buildBookGrid(bookshelf),
+                    : _buildBookList(bookshelf),
               ],
             );
           },
@@ -235,6 +249,17 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       },
     );
   }
+
+  Widget _buildBookList(List<Book> books) {
+    return ListView.builder(
+      padding: const EdgeInsets.all(16),
+      itemCount: books.length,
+      itemBuilder: (context, index) {
+        final book = books[index];
+        return BookSpineItem(book: book);
+      },
+    );
+  }
 }
 
 class BookItem extends ConsumerWidget {
@@ -275,29 +300,7 @@ class BookItem extends ConsumerWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  FutureBuilder<File?>(
-                    future: _resolveCoverPath(book.coverPath),
-                    builder: (context, snapshot) {
-                      if (snapshot.hasData && snapshot.data != null) {
-                        return ClipRRect(
-                          borderRadius: BorderRadius.circular(8),
-                          child: book.isDownloaded
-                              ? Image.file(snapshot.data!, fit: BoxFit.fill)
-                              : ColorFiltered(
-                                  colorFilter: const ColorFilter.mode(
-                                    Colors.grey,
-                                    BlendMode.saturation,
-                                  ),
-                                  child: Image.file(
-                                    snapshot.data!,
-                                    fit: BoxFit.fill,
-                                  ),
-                                ),
-                        );
-                      }
-                      return const Center(child: Icon(Icons.book, size: 40));
-                    },
-                  ),
+                  BookCoverImage(book: book),
                   if (!book.isDownloaded)
                     Center(
                       child: Container(
@@ -308,6 +311,78 @@ class BookItem extends ConsumerWidget {
                         ),
                         child: const Icon(
                           Icons.cloud_download,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  if (book.status == 'read' || book.isRead)
+                    Positioned(
+                      bottom: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.green,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.check,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  if (book.status == 'reading')
+                    Positioned(
+                      bottom: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.auto_stories,
+                          size: 14,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  if (book.status == 'not_started')
+                    Positioned(
+                      bottom: 8,
+                      right: 8,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withOpacity(0.9),
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.2),
+                              blurRadius: 2,
+                              offset: const Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: const Icon(
+                          Icons.book,
+                          size: 14,
                           color: Colors.white,
                         ),
                       ),
@@ -336,6 +411,166 @@ class BookItem extends ConsumerWidget {
       ),
     );
   }
+}
+
+class BookSpineItem extends ConsumerWidget {
+  final Book book;
+
+  const BookSpineItem({super.key, required this.book});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    return GestureDetector(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => BookDetailsScreen(book: book),
+          ),
+        );
+      },
+      onLongPress: () {
+        _showOptionsDialog(context, ref, book);
+      },
+      child: Container(
+        height: 60, // Fixed height for spine effect
+        margin: const EdgeInsets.only(bottom: 8),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(
+            4,
+          ), // Slightly rounded corners like a spine
+          border: Border(
+            left: BorderSide(
+              color: Theme.of(context).primaryColor.withOpacity(0.5),
+              width: 4,
+            ),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 2,
+              offset: const Offset(0, 1),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            // Tiny cover preview
+            AspectRatio(
+              aspectRatio: 2 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: BookCoverImage(book: book),
+              ),
+            ),
+            const SizedBox(width: 16),
+            // Title and Author
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Text(
+                    book.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                  ),
+                  if (book.author != null)
+                    Text(
+                      book.author!,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(fontSize: 12),
+                    ),
+                ],
+              ),
+            ),
+            if (book.status == 'read' || book.isRead) ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: const Text(
+                  'READ',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.green,
+                  ),
+                ),
+              ),
+            ] else if (book.status == 'reading') ...[
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.blue.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: Colors.blue.withOpacity(0.3)),
+                ),
+                child: const Text(
+                  'READING',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue,
+                  ),
+                ),
+              ),
+            ],
+            if (!book.isDownloaded)
+              const Padding(
+                padding: EdgeInsets.only(left: 8),
+                child: Icon(Icons.cloud_download, size: 20, color: Colors.grey),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// Extracted for reuse between Grid and Spine views
+class BookCoverImage extends StatelessWidget {
+  final Book book;
+
+  const BookCoverImage({super.key, required this.book});
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<File?>(
+      future: _resolveCoverPath(book.coverPath),
+      builder: (context, snapshot) {
+        if (snapshot.hasData && snapshot.data != null) {
+          return book.isDownloaded
+              ? Image.file(snapshot.data!, fit: BoxFit.fill)
+              : ColorFiltered(
+                  colorFilter: const ColorFilter.mode(
+                    Colors.grey,
+                    BlendMode.saturation,
+                  ),
+                  child: Image.file(snapshot.data!, fit: BoxFit.fill),
+                );
+        }
+        return Container(
+          color: Colors.grey[200],
+          child: const Center(child: Icon(Icons.book, color: Colors.grey)),
+        );
+      },
+    );
+  }
 
   Future<File?> _resolveCoverPath(String? path) async {
     if (path == null) return null;
@@ -356,70 +591,70 @@ class BookItem extends ConsumerWidget {
     }
     return null;
   }
+}
 
-  void _showOptionsDialog(BuildContext context, WidgetRef ref, Book book) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) {
-        return SafeArea(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.shelves),
-                title: Text(
-                  book.group == 'bookshelf'
-                      ? 'Move to Currently Reading'
-                      : 'Move to Bookshelf',
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  ref
-                      .read(bookRepositoryProvider)
-                      .setBookGroup(
-                        book.id,
-                        book.group == 'bookshelf' ? 'reading' : 'bookshelf',
-                      );
-                },
+void _showOptionsDialog(BuildContext context, WidgetRef ref, Book book) {
+  showModalBottomSheet(
+    context: context,
+    builder: (context) {
+      return SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.shelves),
+              title: Text(
+                book.group == 'bookshelf'
+                    ? 'Move to Desk'
+                    : 'Move to Bookshelf',
               ),
-              ListTile(
-                leading: const Icon(Icons.delete, color: Colors.red),
-                title: const Text(
-                  'Delete Book',
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _confirmDelete(context, ref, book);
-                },
+              onTap: () {
+                Navigator.pop(context);
+                ref
+                    .read(bookRepositoryProvider)
+                    .setBookGroup(
+                      book.id,
+                      book.group == 'bookshelf' ? 'reading' : 'bookshelf',
+                    );
+              },
+            ),
+            ListTile(
+              leading: const Icon(Icons.delete, color: Colors.red),
+              title: const Text(
+                'Delete Book',
+                style: TextStyle(color: Colors.red),
               ),
-            ],
-          ),
-        );
-      },
-    );
-  }
+              onTap: () {
+                Navigator.pop(context);
+                _confirmDelete(context, ref, book);
+              },
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
-  void _confirmDelete(BuildContext context, WidgetRef ref, Book book) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Book'),
-        content: Text('Are you sure you want to delete "${book.title}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ref.read(bookRepositoryProvider).deleteBook(book.id);
-            },
-            child: const Text('Delete', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
+void _confirmDelete(BuildContext context, WidgetRef ref, Book book) {
+  showDialog(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Delete Book'),
+      content: Text('Are you sure you want to delete "${book.title}"?'),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: () {
+            Navigator.pop(context);
+            ref.read(bookRepositoryProvider).deleteBook(book.id);
+          },
+          child: const Text('Delete', style: TextStyle(color: Colors.red)),
+        ),
+      ],
+    ),
+  );
 }

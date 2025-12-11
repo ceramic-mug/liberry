@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'package:dio/dio.dart';
 import 'package:xml/xml.dart';
 import 'remote_book.dart';
@@ -7,15 +6,10 @@ import 'opds_models.dart';
 class OpdsService {
   final Dio _dio;
   static const String _baseUrl = 'https://standardebooks.org/feeds/opds';
-  String? _authHeader;
+  // Removed setCredentials and _authHeader as we are moving to offline DB for SE.
+  // This service can still be used for other generic OPDS if needed but without current auth logic.
 
   OpdsService(this._dio);
-
-  void setCredentials(String username, String password) {
-    final bytes = utf8.encode('$username:$password');
-    final base64Str = base64.encode(bytes);
-    _authHeader = 'Basic $base64Str';
-  }
 
   Future<OpdsFeed> fetchFeed(String url) async {
     try {
@@ -23,8 +17,6 @@ class OpdsService {
         headers: {
           'User-Agent':
               'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          if (_authHeader != null && url.contains('standardebooks.org'))
-            'Authorization': _authHeader,
         },
       );
 
@@ -181,7 +173,6 @@ class OpdsService {
           headers: {
             'User-Agent':
                 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            if (_authHeader != null) 'Authorization': _authHeader,
           },
         ),
       );

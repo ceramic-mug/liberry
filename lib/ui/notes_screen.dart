@@ -6,6 +6,7 @@ import '../data/database.dart';
 import '../providers.dart';
 import 'highlights_screen.dart'; // Will refactor to HighlightsTab
 import 'character_library.dart'; // Will refactor to CharactersTab
+import 'widgets/link_note_dialog.dart';
 
 class NotesScreen extends ConsumerStatefulWidget {
   const NotesScreen({super.key});
@@ -25,7 +26,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 2, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
   }
 
   @override
@@ -53,6 +54,7 @@ class _NotesScreenState extends ConsumerState<NotesScreen>
           tabs: const [
             Tab(text: 'Highlights'),
             Tab(text: 'Characters'),
+            Tab(text: 'Journal'),
           ],
         ),
       ),
@@ -158,6 +160,11 @@ class _NotesScreenState extends ConsumerState<NotesScreen>
                   bookId: _selectedBookId,
                   author: _selectedAuthor,
                 ),
+                JournalTab(
+                  searchQuery: _searchQuery,
+                  bookId: _selectedBookId,
+                  author: _selectedAuthor,
+                ),
               ],
             ),
           ),
@@ -230,18 +237,193 @@ class _NotesScreenState extends ConsumerState<NotesScreen>
             },
           ),
         );
-        // If result is null, it might be dismissal or "All".
-        // To distinguish, we can just assume if they picked specific item it returns T.
-        // If they tapped "All", we pass 'null' conceptually but effectively we want to clear.
-        // Simplest is: if result is passed (even null), we update.
-        // But showModalBottomSheet returns null on dismissal.
-        // So we might need a distinct "clear" object or check logic.
-        // For now, let's assume they pick something or cancel.
-        // Let's rely on the "onDeleted" of the active chip for clearing,
-        // but here we just select.
         if (result != null) {
           onChanged(result);
         }
+      },
+    );
+  }
+}
+
+class JournalTab extends ConsumerWidget {
+  final String searchQuery;
+  final String? bookId;
+  final String? author;
+
+  const JournalTab({
+    super.key,
+    required this.searchQuery,
+    this.bookId,
+    this.author,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final bookRepo = ref.watch(bookRepositoryProvider);
+    // Observe all notes
+    final notesStream = bookRepo.watchAllNotes();
+    // Start observing books to filter by author if needed
+    final booksStream = bookRepo.watchAllBooks();
+
+    return StreamBuilder<List<BookNote>>(
+      stream: notesStream,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData) {
+          return const Center(child: CircularProgressIndicator());
+        }
+        var notes = snapshot.data!;
+
+        return StreamBuilder<List<Book>>(
+          stream: booksStream,
+          builder: (context, bookSnapshot) {
+            if (!bookSnapshot.hasData) return const SizedBox();
+            final books = bookSnapshot.data!;
+            final bookMap = {for (var b in books) b.id: b};
+
+            // Filter
+            if (bookId != null) {
+              notes = notes.where((n) => n.bookId == bookId).toList();
+            }
+
+            if (author != null) {
+              notes = notes.where((n) {
+                final book = bookMap[n.bookId];
+                return book?.author == author;
+              }).toList();
+            }
+
+            if (searchQuery.isNotEmpty) {
+              final q = searchQuery.toLowerCase();
+              notes = notes.where((n) {
+                final contentMatch = n.content.toLowerCase().contains(q);
+                // Also match book title if possible
+                final book = bookMap[n.bookId];
+                final titleMatch =
+                    book?.title.toLowerCase().contains(q) ?? false;
+                return contentMatch || titleMatch;
+              }).toList();
+            }
+
+            if (notes.isEmpty) {
+              return const Center(child: Text('No journal entries found.'));
+            }
+
+            return ListView.builder(
+              padding: const EdgeInsets.all(16),
+              itemCount: notes.length,
+              itemBuilder: (context, index) {
+                final note = notes[index];
+                final book = bookMap[note.bookId];
+                final isLinked = note.quoteId != null;
+
+                return Card(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            if (book != null)
+                              Expanded(
+                                child: Text(
+                                  book.title,
+                                  style: Theme.of(context).textTheme.titleSmall
+                                      ?.copyWith(
+                                        color: Theme.of(context).primaryColor,
+                                      ),
+                                ),
+                              ),
+                            IconButton(
+                              icon: Icon(
+                                isLinked
+                                    ? Icons.highlight
+                                    : Icons
+                                          .highlight_alt, // or just Icons.highlight for both with different color?
+                                // User asked for "highlighter icon".
+                                // Icons.highlight is standard. Icons.border_color is sometimes used.
+                                // Let's use Icons.highlight.
+                                color: isLinked
+                                    ? Theme.of(context).colorScheme.primary
+                                    : Colors.grey,
+                              ),
+                              tooltip: isLinked
+                                  ? 'Linked to highlight'
+                                  : 'Link to highlight',
+                              onPressed: () {
+                                if (isLinked) {
+                                  // Ask to unlink
+                                  showDialog(
+                                    context: context,
+                                    builder: (context) => AlertDialog(
+                                      title: const Text('Unlink Highlight?'),
+                                      content: const Text(
+                                        'Do you want to unlink this journal entry from the highlight?',
+                                      ),
+                                      actions: [
+                                        TextButton(
+                                          onPressed: () =>
+                                              Navigator.pop(context),
+                                          child: const Text('Cancel'),
+                                        ),
+                                        TextButton(
+                                          onPressed: () async {
+                                            Navigator.pop(context);
+                                            await ref
+                                                .read(bookRepositoryProvider)
+                                                .updateNoteQuote(note.id, null);
+                                          },
+                                          child: const Text('Unlink'),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                } else {
+                                  if (book != null) {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => LinkNoteDialog(
+                                        bookId: book.id,
+                                        note: note,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          note.content,
+                          style: const TextStyle(fontSize: 15),
+                          maxLines: 4,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.bottomRight,
+                          child: Text(
+                            // Using a simple date format directly if intl is not imported in this scope,
+                            // but likely it is available or we can use substring.
+                            // Assuming Intl is available or using simple toString for safety if unsure.
+                            // Actually `intl` is not imported in original snippet, so I should be careful.
+                            // I'll assume I can add valid import or just use simple string.
+                            // Ideally imports are added.
+                            note.createdAt.toString().split('.')[0],
+                            style: Theme.of(context).textTheme.labelSmall
+                                ?.copyWith(color: Colors.grey),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
       },
     );
   }

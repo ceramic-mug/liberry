@@ -12,7 +12,7 @@ class BookRepository {
 
   BookRepository(this._db);
 
-  Future<void> addBook(String filePath, {String? remoteCoverUrl}) async {
+  Future<String> addBook(String filePath, {String? remoteCoverUrl}) async {
     File file = File(filePath);
 
     // If path is relative, resolve it against documents directory
@@ -150,6 +150,7 @@ class BookRepository {
             coverPath: Value(coverPath),
           ),
         );
+    return id;
   }
 
   Stream<List<Book>> watchAllBooks() {
@@ -163,6 +164,14 @@ class BookRepository {
       ..where((tbl) => tbl.title.lower().equals(title.toLowerCase()));
     final result = await query.getSingleOrNull();
     return result != null;
+  }
+
+  Future<Book?> getBook(String id) async {
+    final books = await (_db.select(
+      _db.books,
+    )..where((t) => t.id.equals(id))).get();
+    if (books.isEmpty) return null;
+    return (await _resolveBookPaths(books)).first;
   }
 
   Future<List<Book>> _resolveBookPaths(List<Book> books) async {
@@ -268,11 +277,15 @@ class BookRepository {
     return results;
   }
 
-  Future<void> assignQuoteToCharacter(String quoteId, String? characterId) {
+  Future<void> updateHighlightCharacter(String quoteId, String? characterId) {
     return (_db.update(_db.quotes)..where((t) => t.id.equals(quoteId))).write(
       QuotesCompanion(characterId: Value(characterId)),
     );
   }
+
+  // Alias for backward compatibility
+  Future<void> assignQuoteToCharacter(String quoteId, String? characterId) =>
+      updateHighlightCharacter(quoteId, characterId);
 
   Future<void> deleteHighlight(String id) {
     return (_db.delete(_db.quotes)..where((t) => t.id.equals(id))).go();
@@ -284,12 +297,22 @@ class BookRepository {
     )..where((t) => t.id.equals(id))).write(companion);
   }
 
-  Future<void> setBookReadStatus(String id, bool isRead) {
-    return updateBook(id, BooksCompanion(isRead: Value(isRead)));
+  Future<void> updateBookStatus(String id, String status) {
+    return updateBook(id, BooksCompanion(status: Value(status)));
   }
 
+  Future<void> updateBookLocation(String id, String location) {
+    return updateBook(id, BooksCompanion(group: Value(location)));
+  }
+
+  // Legacy alias, forwarding to new location logic
   Future<void> setBookGroup(String id, String group) {
-    return updateBook(id, BooksCompanion(group: Value(group)));
+    return updateBookLocation(id, group);
+  }
+
+  // Legacy alias, forwarding to new status logic (boolean to string)
+  Future<void> setBookReadStatus(String id, bool isRead) {
+    return updateBookStatus(id, isRead ? 'read' : 'reading');
   }
 
   Future<void> offloadBook(String id) async {
@@ -308,7 +331,10 @@ class BookRepository {
     await updateBook(
       id,
       const BooksCompanion(
-        group: Value('bookshelf'),
+        group: Value('bookshelf'), // Move to bookshelf
+        status: Value(
+          'not_started',
+        ), // Reset status or keep? 'not_started' seems safe for offloaded
         isDownloaded: Value(false),
       ),
     );
@@ -345,5 +371,57 @@ class BookRepository {
 
     // Re-resolve paths (needed for covers etc in UI)
     return _resolveBookPaths(allBooks);
+  }
+
+  // Note Management
+  Stream<List<BookNote>> watchNotesForBook(String bookId) {
+    return (_db.select(_db.bookNotes)
+          ..where((t) => t.bookId.equals(bookId))
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+          ]))
+        .watch();
+  }
+
+  Stream<List<BookNote>> watchAllNotes() {
+    return (_db.select(_db.bookNotes)..orderBy([
+          (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+        ]))
+        .watch();
+  }
+
+  Future<void> addBookNote(String bookId, String content, {String? quoteId}) {
+    return _db
+        .into(_db.bookNotes)
+        .insert(
+          BookNotesCompanion.insert(
+            id: const Uuid().v4(),
+            bookId: bookId,
+            quoteId: Value(quoteId),
+            content: content,
+            createdAt: Value(DateTime.now()),
+          ),
+        );
+  }
+
+  // Alias for backward compatibility
+  Future<void> addNote(String bookId, String content) =>
+      addBookNote(bookId, content);
+
+  Future<void> deleteNote(String noteId) {
+    return (_db.delete(_db.bookNotes)..where((t) => t.id.equals(noteId))).go();
+  }
+
+  Future<void> updateNote(String noteId, String content) {
+    return (_db.update(_db.bookNotes)..where((t) => t.id.equals(noteId))).write(
+      BookNotesCompanion(content: Value(content)),
+    );
+  }
+
+  Future<void> updateNoteQuote(String noteId, String? quoteId) {
+    return (_db.update(_db.bookNotes)..where((t) => t.id.equals(noteId))).write(
+      BookNotesCompanion(quoteId: Value(quoteId)),
+    );
   }
 }
