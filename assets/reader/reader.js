@@ -302,15 +302,6 @@ function handleRestore() {
             isRestoring = false;
         }, restoreDelay);
 
-    } else if (window.initialScrollAnchor) {
-        setTimeout(function () {
-            var el = document.getElementById(window.initialScrollAnchor);
-            if (el) {
-                el.scrollIntoView();
-            }
-            document.body.classList.remove('loading');
-            isRestoring = false;
-        }, restoreDelay);
     } else if (window.initialProgress && window.initialProgress !== '') {
         // Restore logic
         if (window.initialProgress.includes('/') || window.initialProgress.startsWith('/')) {
@@ -339,6 +330,15 @@ function handleRestore() {
                 isRestoring = false;
             }
         }
+    } else if (window.initialScrollAnchor) {
+        setTimeout(function () {
+            var el = document.getElementById(window.initialScrollAnchor);
+            if (el) {
+                el.scrollIntoView();
+            }
+            document.body.classList.remove('loading');
+            isRestoring = false;
+        }, restoreDelay);
     } else {
         // No restore needed
         document.body.classList.remove('loading');
