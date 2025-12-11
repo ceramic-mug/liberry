@@ -14,6 +14,8 @@ import 'reader_screen.dart';
 import 'book_journal_screen.dart';
 import 'character_library.dart';
 import 'widgets/link_note_dialog.dart';
+import 'package:share_plus/share_plus.dart';
+import 'common/kindle_helper.dart';
 
 class BookDetailsScreen extends ConsumerStatefulWidget {
   final Book book;
@@ -285,6 +287,63 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
     );
   }
 
+  void _showShareSheet(Book book) {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Text(
+                'Share Book',
+                style: Theme.of(
+                  context,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.send),
+                title: const Text('Send to Kindle'),
+                onTap: () async {
+                  Navigator.pop(context); // Close sheet
+                  await KindleHelper(
+                    context: context,
+                    ref: ref,
+                  ).handleSendToKindle(
+                    filePath: book.filePath,
+                    bookTitle: book.title,
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share),
+                title: const Text('Share File'),
+                onTap: () async {
+                  Navigator.pop(context); // Close sheet
+                  final file = File(book.filePath);
+                  if (await file.exists()) {
+                    await Share.shareXFiles([
+                      XFile(book.filePath),
+                    ], text: 'Check out this book: ${book.title}');
+                  } else {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Book file not found')),
+                      );
+                    }
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bookRepo = ref.watch(bookRepositoryProvider);
@@ -302,6 +361,11 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
             title: const Text('Details'),
             centerTitle: true,
             actions: [
+              IconButton(
+                icon: const Icon(Icons.ios_share),
+                tooltip: 'Share',
+                onPressed: () => _showShareSheet(book),
+              ),
               IconButton(
                 icon: Icon(
                   book.status == 'read'

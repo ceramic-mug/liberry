@@ -42,6 +42,8 @@ PODS:
     - DKImagePickerController/PhotoGallery
     - Flutter
   - Flutter (1.0.0)
+  - flutter_email_sender (0.0.1):
+    - Flutter
   - flutter_inappwebview_ios (0.0.1):
     - Flutter
     - flutter_inappwebview_ios/Core (= 0.0.1)
@@ -103,6 +105,7 @@ PODS:
 DEPENDENCIES:
   - file_picker (from `.symlinks/plugins/file_picker/ios`)
   - Flutter (from `Flutter`)
+  - flutter_email_sender (from `.symlinks/plugins/flutter_email_sender/ios`)
   - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
   - path_provider_foundation (from `.symlinks/plugins/path_provider_foundation/darwin`)
   - share_plus (from `.symlinks/plugins/share_plus/ios`)
@@ -132,6 +135,8 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/file_picker/ios"
   Flutter:
     :path: Flutter
+  flutter_email_sender:
+    :path: ".symlinks/plugins/flutter_email_sender/ios"
   flutter_inappwebview_ios:
     :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
   path_provider_foundation:
@@ -152,6 +157,7 @@ SPEC CHECKSUMS:
   EpubViewerKit: 5f6c8ff9161bba18d6742c59b3c575c19f0623a9
   file_picker: a0560bc09d61de87f12d246fc47d2119e6ef37be
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_email_sender: 2397f5e84aaacfb61af569637a963e7c687858d8
   flutter_inappwebview_ios: b89ba3482b96fb25e00c967aae065701b66e9b99
   FontBlaster: 8897ebdbb4b6ace3ab78c92b665d88c954f19e4a
   MenuItemKit: 1459920e984d823e1bcc858b7a964f94e6bfa0f6

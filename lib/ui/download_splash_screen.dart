@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/remote/remote_book.dart';
 import '../providers.dart';
+
+import '../data/kindle_settings_repository.dart'; // Still needed for refresh event if we want to listen, but helper does work
+import 'common/kindle_helper.dart';
 import 'reader_screen.dart';
 
 class DownloadSplashScreen extends ConsumerStatefulWidget {
@@ -28,6 +31,10 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
 
+  // Kindle Email state
+  // Kindle Devices state
+  List<KindleDevice> _kindleDevices = [];
+
   @override
   void initState() {
     super.initState();
@@ -40,7 +47,25 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
+    // Load Kindle devices
+    _refreshKindleDevices();
+
     _startDownload();
+  }
+
+  void _refreshKindleDevices() {
+    // With KindleHelper, we might not need to strictly maintain this list locally if we delegate everything,
+    // but showing the 'edit' icon conditional on having devices requires it.
+    // For now, let's keep it sync.
+    try {
+      setState(() {
+        _kindleDevices = ref
+            .read(kindleSettingsRepositoryProvider)
+            .getDevices();
+      });
+    } catch (_) {
+      // Provider might not be ready
+    }
   }
 
   @override
@@ -135,6 +160,26 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
     Navigator.of(context).popUntil((route) => route.isFirst);
     // TODO: Implement cleaner navigation to specific tab if possible.
     // For now this returns to home.
+  }
+
+  Future<void> _handleSendToKindle() async {
+    if (_bookId == null) return;
+
+    // We can use the helper now
+    final book = await ref.read(bookRepositoryProvider).getBook(_bookId!);
+    if (book != null && mounted) {
+      await KindleHelper(
+        context: context,
+        ref: ref,
+      ).handleSendToKindle(filePath: book.filePath, bookTitle: book.title);
+      // Refresh local state to update UI (show/hide settings icon)
+      _refreshKindleDevices();
+    }
+  }
+
+  Future<void> _showManageDevicesDialog() async {
+    await KindleHelper(context: context, ref: ref).showManageDevicesDialog();
+    _refreshKindleDevices();
   }
 
   @override
@@ -371,6 +416,42 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 16),
+                    SizedBox(
+                      width: double.infinity,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              onPressed: _handleSendToKindle,
+                              icon: const Icon(Icons.send),
+                              label: const Text("Send to Kindle"),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.white,
+                                side: const BorderSide(color: Colors.white30),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
+                          ),
+                          if (_kindleDevices.isNotEmpty) ...[
+                            const SizedBox(width: 8),
+                            IconButton(
+                              onPressed: _showManageDevicesDialog,
+                              icon: const Icon(
+                                Icons.settings_remote,
+                                color: Colors.white54,
+                              ),
+                              tooltip: 'Manage Kindle Devices',
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
 
                     if (_addedToDesk || _addedToBookshelf) ...[

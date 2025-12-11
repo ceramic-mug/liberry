@@ -52,6 +52,7 @@ dependencies:
   flutter_svg: ^2.2.3
   shared_preferences: ^2.5.3
   html: ^0.15.6
+  flutter_email_sender: ^6.0.3
 
 dev_dependencies:
   flutter_test:
