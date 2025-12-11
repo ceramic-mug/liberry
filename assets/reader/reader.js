@@ -586,14 +586,27 @@ function setupHorizontalObservers() {
     }
 
     function getHorizontalLocation() {
-        // Simplistic logic for horizontal
-        var xScreen = 40;
-        var yScreen = 60;
-        var range, node;
-        if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(xScreen, yScreen);
-        if (range) node = range.startContainer;
-        if (!node) node = document.elementFromPoint(xScreen, yScreen);
-        if (node) return getPathTo(node);
+        // Precise Horizontal Location
+        // We probe a bit inside the page to avoid margin issues
+        var xScreen = 60; // Just past the left margin usually
+        var yScreen = 80; // Down from top
+
+        if (document.caretPositionFromPoint) {
+            var pos = document.caretPositionFromPoint(xScreen, yScreen);
+            if (pos && pos.offsetNode) {
+                return JSON.stringify({ type: 'precise', path: getPathTo(pos.offsetNode), offset: pos.offset });
+            }
+        } else if (document.caretRangeFromPoint) {
+            var range = document.caretRangeFromPoint(xScreen, yScreen);
+            if (range && range.startContainer) {
+                return JSON.stringify({ type: 'precise', path: getPathTo(range.startContainer), offset: range.startOffset });
+            }
+        }
+
+        // Fallback to element lookup
+        var el = document.elementFromPoint(xScreen, yScreen);
+        if (el && el !== document.body) return getPathTo(el);
+
         return null;
     }
 
