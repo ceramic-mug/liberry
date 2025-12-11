@@ -252,7 +252,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         }).toList();
 
         // Generate HTML
-        final html = ReaderHtmlGenerator.generateHtml(
+        final html = await ReaderHtmlGenerator.generateHtml(
           content,
           theme: _theme,
           fontSize: _fontSize,

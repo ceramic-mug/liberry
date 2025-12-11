@@ -1,0 +1,375 @@
+/* Global Vars - Injected or Default */
+:root {
+  --text-color: #000000;
+  --bg-color: transparent;
+  --font-family: 'Georgia';
+  --font-size: 100%;
+  --line-height: 1.8;
+  --selection-color: rgba(33, 150, 243, 0.3);
+  --highlight-color: rgba(255, 235, 59, 0.4);
+  --highlight-border: rgba(253, 216, 53, 0.8);
+}
+
+html {
+  box-sizing: border-box;
+  overflow-x: hidden;
+  height: 100%;
+}
+
+*,
+*:before,
+*:after {
+  box-sizing: inherit;
+}
+
+body {
+  background-color: var(--bg-color) !important;
+  color: var(--text-color) !important;
+  font-size: var(--font-size);
+  font-family: var(--font-family) !important;
+  line-height: var(--line-height) !important;
+  position: relative;
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  -webkit-text-size-adjust: 100%;
+
+  /* Flexbox for sticky footer behavior in Vert, Block in Horiz */
+  min-height: 100%;
+  opacity: 1;
+  transition: opacity 0.2s ease-in;
+}
+
+body.loading {
+  opacity: 0;
+}
+
+/* ---------------- SCROLL MODES ---------------- */
+
+/* Vertical Mode */
+body.mode-vertical {
+  padding: calc(60px + 3vh) 30px calc(60px + 3vh) 30px !important;
+  margin: 0 auto !important;
+  max-width: 800px !important;
+  box-sizing: border-box !important;
+  overflow-x: hidden !important;
+  display: flex;
+  flex-direction: column;
+}
+
+body.mode-vertical img,
+body.mode-vertical video,
+body.mode-vertical svg {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Horizontal Mode */
+body.mode-horizontal {
+  height: 100vh;
+  width: 100vw;
+  margin: 0;
+  overflow: hidden;
+  /* Strict lock on window */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+
+  /* Safe Area Padding with Fallbacks + Extra Margin */
+  padding-top: calc(env(safe-area-inset-top, 60px) + 3vh);
+  padding-bottom: calc(env(safe-area-inset-bottom, 60px) + 3vh);
+  padding-left: 0;
+  padding-right: 0;
+  box-sizing: border-box;
+}
+
+/* The Scroll Container for Horizontal */
+body.mode-horizontal #reader-content {
+  flex: 1;
+  /* Fill the verified safe area */
+  width: 100vw;
+  height: 100%;
+  /* Critical for columns to calculate breaks */
+
+  overflow: hidden;
+
+  /* CSS Columns */
+  column-width: 100vw;
+  column-gap: 0;
+  column-fill: auto;
+
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Hide arrow in horizontal mode */
+body.mode-horizontal #next-chapter-btn {
+  display: none !important;
+}
+
+/* Hide Scrollbars */
+::-webkit-scrollbar {
+  display: none;
+}
+
+.chapter-container {
+  break-before: always;
+}
+
+/* Add padding to content elements for reading comfort in Horizontal */
+body.mode-horizontal p,
+body.mode-horizontal h1,
+body.mode-horizontal h2,
+body.mode-horizontal h3,
+body.mode-horizontal h4,
+body.mode-horizontal h5,
+body.mode-horizontal h6,
+body.mode-horizontal li,
+body.mode-horizontal div {
+  padding-left: 20px;
+  padding-right: 20px;
+  box-sizing: border-box;
+}
+
+body.mode-horizontal img {
+  max-height: 90vh;
+  /* Leave room for margins */
+  max-width: calc(100vw - 40px);
+  width: auto;
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  object-fit: contain;
+  break-inside: avoid;
+}
+
+/* ---------------- TYPOGRAPHY & SELECTION ---------------- */
+
+::selection {
+  background-color: var(--selection-color);
+  color: inherit;
+}
+
+/* Suppress on all elements by default to fix 'select whole page' bug */
+* {
+  -webkit-touch-callout: none !important;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Re-enable selection on text content specifically */
+p,
+div,
+span,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6,
+li,
+blockquote,
+a {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  cursor: text;
+}
+
+/* Force global font settings to override ANY book defaults */
+body * {
+  font-family: inherit !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+}
+
+/* Specific formatting for text blocks */
+p,
+div,
+span,
+li,
+blockquote,
+a {
+  white-space: normal !important;
+  /* Force normal wrapping (fixes OCR line breaks) */
+  word-wrap: break-word !important;
+  margin-top: 0 !important;
+  margin-bottom: 1em !important;
+}
+
+pre {
+  white-space: pre-wrap !important;
+}
+
+h1 {
+  font-size: 2em !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+h2 {
+  font-size: 1.5em !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+h3 {
+  font-size: 1.17em !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+h4 {
+  font-size: 1em !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+h5 {
+  font-size: 0.83em !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+h6 {
+  font-size: 0.67em !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+
+/* ---------------- MENUS & HIGHLIGHTS ---------------- */
+
+#custom-menu,
+#highlight-menu {
+  all: initial;
+  position: absolute;
+  background-color: #1a1a1a !important;
+  /* Force Opaque */
+  border-radius: 18px;
+  padding: 8px;
+  display: none;
+  grid-template-columns: 43px 43px;
+  grid-template-rows: 43px 43px;
+  gap: 8px;
+  z-index: 2147483647 !important;
+  pointer-events: auto !important;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.15);
+  width: 110px;
+  height: 110px;
+
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  box-sizing: border-box !important;
+
+  /* Isolation to force new stacking context on top */
+  isolation: isolate;
+
+  /* Animation */
+  opacity: 0;
+  transition: opacity 0.1s ease-out;
+}
+
+#custom-menu.visible,
+#highlight-menu.visible {
+  display: grid !important;
+  opacity: 1;
+}
+
+#custom-menu *,
+#highlight-menu * {
+  box-sizing: border-box !important;
+  -webkit-user-select: none !important;
+  user-select: none !important;
+
+  /* CRITICAL: Override global 'body *' wildcards */
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif !important;
+  font-size: 16px !important;
+  line-height: 1 !important;
+  letter-spacing: normal !important;
+  max-width: none !important;
+}
+
+.menu-item {
+  color: #ffffff;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: #2c2c2c;
+  border-radius: 10px;
+  transition: background-color 0.1s;
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+
+.menu-item:hover {
+  background-color: #3d3d3d;
+}
+
+.menu-item:active {
+  background-color: #505050;
+  transform: scale(0.96);
+}
+
+/* First item (Highlight) spans full width in 3-item layout (Main Menu) */
+#btn-highlight {
+  grid-column: span 2;
+}
+
+.menu-item svg {
+  width: 22px;
+  height: 22px;
+  fill: #ffffff;
+  display: block;
+  margin: 0;
+}
+
+/* Trash Icon for Highlight Menu */
+#btn-delete svg {
+  fill: #ff5252;
+  /* Red for delete */
+}
+
+/* Solid Tail */
+#custom-menu::after,
+#highlight-menu::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  margin-left: -6px;
+  width: 0;
+  height: 0;
+  border-left: 6px solid transparent;
+  border-right: 6px solid transparent;
+  border-top: 6px solid #1a1a1a;
+}
+
+#custom-menu.below::after,
+#highlight-menu.below::after {
+  bottom: auto;
+  top: -6px;
+  border-top: none;
+  border-bottom: 6px solid #1a1a1a;
+}
+
+.highlight {
+  background-color: var(--highlight-color);
+  cursor: pointer;
+  border-bottom: 2px solid var(--highlight-border);
+  color: inherit;
+}
+
+.next-chapter-button {
+  margin-top: auto;
+  padding: 40px 0;
+  text-align: center;
+  cursor: pointer;
+  opacity: 0.5;
+  transition: opacity 0.3s;
+  break-inside: avoid;
+}
