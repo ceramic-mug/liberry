@@ -457,18 +457,63 @@ function setupHorizontalObservers() {
     var touchStartX = 0, touchStartY = 0, touchStartTime = 0, startScrollLeft = 0;
     var isDragging = false, isScrolling = false;
     var lastHandledTapTime = 0;
-    const width = window.innerWidth;
+    // const width = window.innerWidth; // Removed static width
 
     // Key Nav
     document.addEventListener('keydown', function (e) {
         if (interactionLocked || inputBlocked) return;
+        var w = window.innerWidth;
         if (e.key === 'ArrowRight') {
             e.preventDefault();
-            snapToPage(Math.round(container.scrollLeft / width) + 1);
+            snapToPage(Math.round(container.scrollLeft / w) + 1);
         } else if (e.key === 'ArrowLeft') {
             e.preventDefault();
-            snapToPage(Math.round(container.scrollLeft / width) - 1);
+            snapToPage(Math.round(container.scrollLeft / w) - 1);
         }
+    });
+
+    // Resize Listener
+    var resizeTimer;
+    window.addEventListener('resize', function () {
+        // Debounce
+        if (resizeTimer) clearTimeout(resizeTimer);
+
+        // Capture location if not already restoring
+        if (!window.isRestoring) {
+            // We want to capture where we were *before* the chaotic resize happened, 
+            // but 'resize' fires often. 
+            // Ideally we find the element currently on screen and scroll to it after.
+            // Let's just rely on getting the location *now* or finding the element that WAS at the top-left.
+        }
+
+        resizeTimer = setTimeout(function () {
+            console.log("Resize finished. Restoring location...");
+
+            // Re-snap or restore.
+            // Since column width changed, scrollLeft is likely invalid. 
+            // We need to re-find our place.
+            // Best bet: use the location we (hopefully) tracked or just re-read current position?
+            // Actually, if we just resize, the content flows. 
+            // We should grab a precise location *before* we do anything else, or better:
+            // Continually track 'current top-left element' in a var?
+
+            // Simple approach: grab location now (might be off if flow changed) and restore it.
+            // OR: relying on the fact that we can get a location from the center of screen.
+
+            var loc = getHorizontalLocation();
+            if (loc) {
+                try {
+                    var jsonObj = JSON.parse(loc);
+                    // restorePath handles the logic of finding that element and scrolling to it
+                    restorePath(loc);
+                } catch (e) {
+                    console.log("Error restoring after resize: " + e);
+                }
+            } else {
+                // Fallback: update scroll
+                snapToPage(Math.round(container.scrollLeft / window.innerWidth));
+            }
+        }, 200);
     });
 
     // Click
@@ -542,7 +587,8 @@ function setupHorizontalObservers() {
         }
 
         if (interactionLocked) return;
-        var startPage = Math.round(startScrollLeft / width);
+        var currentW = window.innerWidth;
+        var startPage = Math.round(startScrollLeft / currentW);
         var targetPage = startPage;
         if (Math.abs(diffX) > 50) {
             targetPage = (diffX > 0) ? startPage + 1 : startPage - 1;
@@ -551,8 +597,9 @@ function setupHorizontalObservers() {
     });
 
     function snapToPage(pageIndex) {
+        var w = window.innerWidth;
         var scrollW = container.scrollWidth;
-        var maxPage = Math.ceil(scrollW / width) - 1;
+        var maxPage = Math.ceil(scrollW / w) - 1;
 
         if (pageIndex < 0) {
             container.scrollLeft = 0;
@@ -560,21 +607,22 @@ function setupHorizontalObservers() {
             return;
         }
         if (pageIndex > maxPage) {
-            container.scrollLeft = maxPage * width;
+            container.scrollLeft = maxPage * w;
             if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onNextChapter');
             return;
         }
 
         // CSS Smooth scroll doesn't always work perfectly with programmatic scrollLeft in loop
         // Standard assignment is usually better here unless utilizing scrollIntoView
-        container.scrollTo({ left: pageIndex * width, behavior: 'smooth' });
+        container.scrollTo({ left: pageIndex * w, behavior: 'smooth' });
         setTimeout(reportHorizontalLocation, 300);
     }
 
     function handleTap(x) {
-        var p = x / window.innerWidth;
-        if (p < 0.2) snapToPage(Math.round(container.scrollLeft / width) - 1);
-        else if (p > 0.8) snapToPage(Math.round(container.scrollLeft / width) + 1);
+        var w = window.innerWidth;
+        var p = x / w;
+        if (p < 0.2) snapToPage(Math.round(container.scrollLeft / w) - 1);
+        else if (p > 0.8) snapToPage(Math.round(container.scrollLeft / w) + 1);
         else if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onTap');
     }
 
