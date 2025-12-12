@@ -184,6 +184,11 @@ def bake_database():
         conn.close()
         print(f"Done! Database saved to {DB_NAME}")
         print(f"Total books indexed: {count}")
+
+        # Cleanup: Remove the large zip file
+        if os.path.exists(RDF_FILENAME):
+            print(f"Cleaning up {RDF_FILENAME}...")
+            os.remove(RDF_FILENAME)
         
     except Exception as e:
         print(f"An error occurred during processing: {e}")

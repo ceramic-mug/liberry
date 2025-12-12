@@ -87,6 +87,7 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
             widget.book.downloadUrl!,
             widget.book.title,
             coverUrl: widget.book.coverUrl,
+            sourceMetadata: jsonEncode(widget.book.toJson()),
           );
 
       // Auto-categorize as "Desk" and "Not Started"

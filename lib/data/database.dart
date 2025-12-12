@@ -33,6 +33,8 @@ class Books extends Table {
   TextColumn get language => text().nullable()();
   DateTimeColumn get publishedDate => dateTime().nullable()();
   BoolColumn get isDownloaded => boolean().withDefault(const Constant(true))();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -45,6 +47,8 @@ class ReadingProgress extends Table {
   RealColumn get progressPercentage =>
       real().withDefault(const Constant(0.0))();
   DateTimeColumn get lastReadAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -57,6 +61,8 @@ class Characters extends Table {
   TextColumn get imagePath => text().nullable()();
   TextColumn get originBookId => text().references(Books, #id)();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -70,6 +76,8 @@ class Quotes extends Table {
   TextColumn get characterId => text().nullable().references(Characters, #id)();
   TextColumn get cfi => text().nullable()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -82,6 +90,8 @@ class BookNotes extends Table {
       text().nullable().references(Quotes, #id)(); // Link to highlight
   TextColumn get content => text()();
   DateTimeColumn get createdAt => dateTime().withDefault(currentDateAndTime)();
+  DateTimeColumn get updatedAt => dateTime().withDefault(currentDateAndTime)();
+  BoolColumn get isDeleted => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {id};
@@ -92,7 +102,7 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase() : super(_openConnection());
 
   @override
-  int get schemaVersion => 8; // Updated to 8
+  int get schemaVersion => 9; // Updated to 9
 
   @override
   MigrationStrategy get migration {
@@ -195,6 +205,35 @@ class AppDatabase extends _$AppDatabase {
               BooksCompanion(status: Value(newStatus), group: Value(newGroup)),
             );
           }
+        }
+        if (from < 9) {
+          // Add updatedAt and isDeleted columns
+          final now = DateTime.now();
+          final nowMillis =
+              now.millisecondsSinceEpoch ~/
+              1000; // Seconds for Drift Integer Storage (default)
+
+          // Helper to add columns manually to avoid "non-constant default" error with currentDateAndTime
+          Future<void> addSyncColumns(String tableName) async {
+            // updated_at: INTEGER NOT NULL DEFAULT 0
+            await m.issueCustomQuery(
+              'ALTER TABLE $tableName ADD COLUMN updated_at INTEGER NOT NULL DEFAULT $nowMillis',
+            );
+            // is_deleted: INTEGER NOT NULL DEFAULT 0 (boolean is integer 0/1)
+            // Drift booleans are integers. Default false = 0.
+            await m.issueCustomQuery(
+              'ALTER TABLE $tableName ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0',
+            );
+          }
+
+          await addSyncColumns('books');
+          await addSyncColumns('reading_progress');
+          await addSyncColumns('characters');
+          await addSyncColumns('quotes');
+          await addSyncColumns('book_notes');
+
+          // No need to manually update rows because we set the DEFAULT to 'nowMillis' (current timestamp)
+          // valid for the moment of migration.
         }
       },
     );

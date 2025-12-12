@@ -1,14 +1,19 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:liberry/utils/ios_file_utils.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../data/database.dart';
 import '../providers.dart';
 import 'book_details_screen.dart';
+import 'settings/settings_screen.dart';
+import 'settings/sync_settings_screen.dart';
+import '../data/sync/sync_service.dart';
 
 enum SortOption { title, author, dateAdded, rating }
 
@@ -69,6 +74,54 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       case SortOption.dateAdded:
       default:
         return books..sort((a, b) => b.addedAt.compareTo(a.addedAt));
+    }
+  }
+
+  void _showSortDialog() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return SimpleDialog(
+          title: const Text('Sort By'),
+          children: SortOption.values.map((option) {
+            return SimpleDialogOption(
+              onPressed: () {
+                setState(() {
+                  _sortOption = option;
+                });
+                Navigator.pop(context);
+              },
+              child: Row(
+                children: [
+                  Icon(
+                    _sortOption == option
+                        ? Icons.radio_button_checked
+                        : Icons.radio_button_unchecked,
+                    color: _sortOption == option
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey,
+                  ),
+                  const SizedBox(width: 12),
+                  Text(_getSortOptionLabel(option)),
+                ],
+              ),
+            );
+          }).toList(),
+        );
+      },
+    );
+  }
+
+  String _getSortOptionLabel(SortOption option) {
+    switch (option) {
+      case SortOption.title:
+        return 'Title';
+      case SortOption.author:
+        return 'Author';
+      case SortOption.dateAdded:
+        return 'Date Added';
+      case SortOption.rating:
+        return 'Rating';
     }
   }
 
@@ -172,6 +225,168 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     );
   }
 
+  Future<void> _performSync() async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final syncFilePath = prefs.getString('sync_file_path');
+
+    debugPrint('Sync Request. Path: $syncFilePath');
+
+    if (syncFilePath == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Sync file not configured. Taking you to settings...',
+            ),
+          ),
+        );
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => const SyncSettingsScreen()),
+        );
+      }
+      return;
+    }
+
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Syncing...')));
+    }
+
+    String? tempFilePath;
+    String? bookmark;
+
+    try {
+      File syncFile;
+
+      // iOS: Use coordinated file access
+      if (Platform.isIOS) {
+        bookmark = prefs.getString('sync_file_bookmark_ios');
+        if (bookmark == null) {
+          throw Exception(
+            'No bookmark stored. Please re-select the sync file.',
+          );
+        }
+
+        debugPrint('iOS: Preparing coordinated read...');
+        try {
+          tempFilePath = await IosFileUtils.prepareSyncRead(bookmark);
+        } on PlatformException catch (e) {
+          if (e.code == 'BOOKMARK_STALE') {
+            // Bookmark is stale, prompt user to re-select
+            if (mounted) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              await showDialog(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  title: const Text('Sync File Access Lost'),
+                  content: const Text(
+                    'The sync file was moved or renamed. Please go to Sync Settings and re-select the file.',
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => const SyncSettingsScreen(),
+                          ),
+                        );
+                      },
+                      child: const Text('Go to Settings'),
+                    ),
+                  ],
+                ),
+              );
+            }
+            return;
+          }
+          rethrow;
+        }
+
+        if (tempFilePath == null) {
+          throw Exception('Failed to prepare sync file for reading.');
+        }
+        debugPrint('iOS: Using temp file at: $tempFilePath');
+        syncFile = File(tempFilePath);
+      } else {
+        // Non-iOS: Direct file access
+        syncFile = File(syncFilePath);
+      }
+
+      debugPrint('File exists before sync? ${syncFile.existsSync()}');
+      if (syncFile.existsSync()) {
+        debugPrint('File size before sync: ${syncFile.lengthSync()}');
+      }
+
+      final syncService = ref.read(syncServiceProvider);
+
+      // Import merge first
+      debugPrint('Starting Import...');
+      await syncService.importFromSyncFile(syncFile);
+      debugPrint('Import Finished.');
+
+      // Then Export snapshot
+      debugPrint('Starting Export...');
+      await syncService.exportToSyncFile(syncFile);
+      debugPrint('Export Finished.');
+
+      if (syncFile.existsSync()) {
+        debugPrint('File size after sync: ${await syncFile.length()}');
+      }
+
+      // iOS: Commit changes back to cloud
+      if (Platform.isIOS && bookmark != null && tempFilePath != null) {
+        debugPrint('iOS: Committing coordinated write...');
+        final success = await IosFileUtils.commitSyncWrite(
+          bookmarkBase64: bookmark,
+          tempPath: tempFilePath,
+        );
+        if (!success) {
+          throw Exception('Failed to write sync file back to cloud.');
+        }
+        debugPrint('iOS: Successfully wrote to cloud.');
+      }
+
+      final now = DateTime.now();
+      await prefs.setString('last_sync_time', now.toIso8601String());
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sync completed successfully.')),
+        );
+      }
+    } catch (e, stack) {
+      debugPrint('Sync Exception: $e');
+      debugPrint('Stacktrace: $stack');
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+      }
+    } finally {
+      // iOS: Cleanup
+      if (Platform.isIOS) {
+        if (tempFilePath != null) {
+          await IosFileUtils.cleanupSync(tempFilePath);
+        }
+        await IosFileUtils.stopAccess();
+        debugPrint('iOS: Cleanup complete.');
+      }
+
+      // Force refresh the books provider to update UI after sync
+      ref.invalidate(allBooksProvider);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final booksAsyncValue = ref.watch(allBooksProvider);
@@ -256,45 +471,77 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               )
             else ...[
               IconButton(
-                icon: const Icon(Icons.search),
-                onPressed: () {
-                  setState(() {
-                    _isSearching = true;
-                  });
-                },
+                icon: const Icon(Icons.sync),
+                tooltip: 'Sync Now',
+                onPressed: _performSync,
+              ),
+              // Options Menu (Search, Filter, Sort)
+              PopupMenuButton(
+                // User asked for "Consolidate the search, filter, and sort into one icon that expands into those options"
+                // Let's use 'tune' or 'widgets' or just 'more_horiz'?
+                // "expands into those options".
+                // Let's use 'tune' (sliders style) or 'menu'.
+                // Actually, user said "[Options]... next to a settings (gear)".
+                // Let's use 'tune'.
+                icon: const Icon(Icons.tune),
+                tooltip: 'Options',
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    child: ListTile(
+                      leading: const Icon(Icons.search),
+                      title: const Text('Search'),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.pop(context);
+                        setState(() {
+                          _isSearching = true;
+                        });
+                      },
+                    ),
+                  ),
+                  PopupMenuItem(
+                    child: ListTile(
+                      leading: Icon(
+                        Icons.filter_list,
+                        color: _statusFilters.isNotEmpty
+                            ? Theme.of(context).primaryColor
+                            : null,
+                      ),
+                      title: const Text('Filter'),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showFilterDialog();
+                      },
+                    ),
+                  ),
+                  PopupMenuItem(
+                    enabled:
+                        false, // This is just a header for sub-menu? No, PopupMenu doesn't support nested easily.
+                    // Maybe show Sort Dialog?
+                    child: ListTile(
+                      leading: const Icon(Icons.sort),
+                      title: const Text('Sort By...'),
+                      contentPadding: EdgeInsets.zero,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showSortDialog();
+                      },
+                    ),
+                  ),
+                ],
               ),
               IconButton(
-                icon: Icon(
-                  Icons.filter_list,
-                  color: _statusFilters.isNotEmpty
-                      ? Theme.of(context).primaryColor
-                      : null,
-                ),
-                onPressed: _showFilterDialog,
-              ),
-              PopupMenuButton<SortOption>(
-                icon: const Icon(Icons.sort),
-                onSelected: (SortOption result) =>
-                    setState(() => _sortOption = result),
-                itemBuilder: (BuildContext context) =>
-                    <PopupMenuEntry<SortOption>>[
-                      const PopupMenuItem<SortOption>(
-                        value: SortOption.title,
-                        child: Text('Title'),
-                      ),
-                      const PopupMenuItem<SortOption>(
-                        value: SortOption.author,
-                        child: Text('Author'),
-                      ),
-                      const PopupMenuItem<SortOption>(
-                        value: SortOption.dateAdded,
-                        child: Text('Date Added'),
-                      ),
-                      const PopupMenuItem<SortOption>(
-                        value: SortOption.rating,
-                        child: Text('Rating'),
-                      ),
-                    ],
+                icon: const Icon(Icons.settings),
+                tooltip: 'Settings',
+                onPressed: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => const SettingsScreen(),
+                    ),
+                  );
+                },
               ),
             ],
           ],
@@ -360,7 +607,20 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   .toList(),
             );
 
+            // DEBUG: Log book counts and details
+            debugPrint('=== Library Screen Debug ===');
+            debugPrint('Total books: ${books.length}');
+            debugPrint('Desk books: ${deskBooks.length}');
+            debugPrint('Bookshelf books: ${bookshelf.length}');
+            for (final b in deskBooks) {
+              debugPrint(
+                '  Desk: "${b.title}" group=${b.group} isDeleted=${b.isDeleted}',
+              );
+            }
+            debugPrint('============================');
+
             return TabBarView(
+              key: ValueKey('tabview_${books.length}'),
               children: [
                 // Desk Tab - Keep as Grid
                 deskBooks.isEmpty
@@ -405,7 +665,13 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
     // If physics is NeverScrollable, we need shrinkWrap true
     final isScrollable = startPhysics == null;
 
+    // Use a key based on book count to force rebuild when list changes
+    final gridKey = ValueKey(
+      'grid_${books.length}_${books.isNotEmpty ? books.first.id : 'empty'}',
+    );
+
     return GridView.builder(
+      key: gridKey,
       padding: const EdgeInsets.all(16),
       shrinkWrap: !isScrollable,
       physics: startPhysics,
@@ -419,6 +685,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       itemBuilder: (context, index) {
         final book = books[index];
         return BookItem(
+          key: ValueKey(book.id),
           book: book,
           isSelected: _selectedBookIds.contains(book.id),
           isSelectionMode: _isSelectionMode,
@@ -986,52 +1253,96 @@ class BookSpineItem extends ConsumerWidget {
 }
 
 // Extracted for reuse between Grid and Spine views
-class BookCoverImage extends StatelessWidget {
+// Uses ConsumerWidget to access cached docsDirectory for sync file operations
+class BookCoverImage extends ConsumerWidget {
   final Book book;
 
   const BookCoverImage({super.key, required this.book});
 
   @override
-  Widget build(BuildContext context) {
-    return FutureBuilder<File?>(
-      future: _resolveCoverPath(book.coverPath),
-      builder: (context, snapshot) {
-        if (snapshot.hasData && snapshot.data != null) {
-          return book.isDownloaded
-              ? Image.file(snapshot.data!, fit: BoxFit.fill)
-              : ColorFiltered(
-                  colorFilter: const ColorFilter.mode(
-                    Colors.grey,
-                    BlendMode.saturation,
-                  ),
-                  child: Image.file(snapshot.data!, fit: BoxFit.fill),
-                );
+  Widget build(BuildContext context, WidgetRef ref) {
+    // Get cached docs directory - returns null if still loading
+    final docsAsync = ref.watch(docsDirectoryProvider);
+
+    return docsAsync.when(
+      loading: () => _buildPlaceholder(),
+      error: (_, __) => _buildPlaceholder(),
+      data: (docsDir) {
+        // Now we can use sync file operations
+        final coverFile = _resolveCoverPathSync(book.coverPath, docsDir.path);
+
+        if (coverFile != null && coverFile.existsSync()) {
+          Widget imageWidget = Image.file(
+            coverFile,
+            fit: BoxFit.fill,
+            errorBuilder: (context, error, stackTrace) {
+              debugPrint('Image.file ERROR for "${book.title}": $error');
+              return _buildPlaceholder();
+            },
+          );
+
+          if (!book.isDownloaded) {
+            imageWidget = ColorFiltered(
+              colorFilter: const ColorFilter.mode(
+                Colors.grey,
+                BlendMode.saturation,
+              ),
+              child: imageWidget,
+            );
+          }
+
+          return imageWidget;
         }
-        return Container(
-          color: Colors.grey[200],
-          child: const Center(child: Icon(Icons.book, color: Colors.grey)),
-        );
+
+        return _buildPlaceholder();
       },
     );
   }
 
-  Future<File?> _resolveCoverPath(String? path) async {
-    if (path == null) return null;
-    try {
-      final file = File(path);
-      if (await file.exists()) return file;
+  Widget _buildPlaceholder() {
+    return Container(
+      color: Colors.grey[200],
+      child: Center(
+        child: Text(
+          book.title
+              .substring(0, book.title.length > 2 ? 2 : book.title.length)
+              .toUpperCase(),
+          style: const TextStyle(
+            color: Colors.grey,
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ),
+    );
+  }
 
-      final docsDir = await getApplicationDocumentsDirectory();
+  File? _resolveCoverPathSync(String? path, String docsPath) {
+    if (path == null) return null;
+
+    try {
+      // Try direct path first (for absolute paths)
+      final file = File(path);
+      if (file.existsSync()) return file;
+
+      // Try relative to docs dir
       if (!p.isAbsolute(path)) {
-        final fullPath = p.join(docsDir.path, path);
-        if (await File(fullPath).exists()) return File(fullPath);
+        final fullPath = p.join(docsPath, path);
+        if (File(fullPath).existsSync()) {
+          return File(fullPath);
+        }
       }
+
+      // Try in covers subdirectory
       final filename = p.basename(path);
-      final newPath = p.join(docsDir.path, 'covers', filename);
-      if (await File(newPath).exists()) return File(newPath);
+      final newPath = p.join(docsPath, 'covers', filename);
+      if (File(newPath).existsSync()) {
+        return File(newPath);
+      }
     } catch (e) {
-      return null;
+      debugPrint('_resolveCoverPathSync error: $e');
     }
+
     return null;
   }
 }

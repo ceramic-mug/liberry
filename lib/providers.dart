@@ -1,5 +1,8 @@
+import 'dart:io';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
+import 'package:path_provider/path_provider.dart';
 import 'data/database.dart';
 import 'data/book_repository.dart';
 import 'data/character_repository.dart';
@@ -14,12 +17,21 @@ final databaseProvider = Provider<AppDatabase>((ref) {
   return AppDatabase();
 });
 
+final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
+  throw UnimplementedError();
+});
+
 final bookRepositoryProvider = Provider<BookRepository>((ref) {
   return BookRepository(ref.read(databaseProvider));
 });
 
 final allBooksProvider = StreamProvider<List<Book>>((ref) {
   return ref.watch(bookRepositoryProvider).watchAllBooks();
+});
+
+// Cached docs directory path for synchronous cover loading
+final docsDirectoryProvider = FutureProvider<Directory>((ref) async {
+  return getApplicationDocumentsDirectory();
 });
 
 final characterRepositoryProvider = Provider<CharacterRepository>((ref) {

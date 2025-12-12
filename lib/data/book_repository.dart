@@ -16,6 +16,7 @@ class BookRepository {
     String filePath, {
     String? remoteCoverUrl,
     String? downloadUrl,
+    String? sourceMetadata,
   }) async {
     File file = File(filePath);
 
@@ -153,6 +154,7 @@ class BookRepository {
             author: Value(author),
             coverPath: Value(coverPath),
             downloadUrl: Value(downloadUrl),
+            sourceMetadata: Value(sourceMetadata),
           ),
         );
     return id;
@@ -245,11 +247,51 @@ class BookRepository {
   }
 
   Future<void> deleteBook(String id) async {
+    // 1. Fetch book to get file paths
+    final book = await getBook(id);
+    if (book != null) {
+      final appDir = await getApplicationDocumentsDirectory();
+
+      // 2. Delete EPUB file
+      try {
+        String filePath = book.filePath;
+        if (!p.isAbsolute(filePath)) {
+          filePath = p.join(appDir.path, filePath);
+        }
+        final file = File(filePath);
+        if (await file.exists()) {
+          await file.delete();
+          print('Deleted book file: $filePath');
+        }
+      } catch (e) {
+        print('Error deleting book file: $e');
+      }
+
+      // 3. Delete Cover image
+      if (book.coverPath != null) {
+        try {
+          String coverPath = book.coverPath!;
+          if (!p.isAbsolute(coverPath)) {
+            coverPath = p.join(appDir.path, coverPath);
+          }
+          final coverFile = File(coverPath);
+          if (await coverFile.exists()) {
+            await coverFile.delete();
+            print('Deleted cover file: $coverPath');
+          }
+        } catch (e) {
+          print('Error deleting cover file: $e');
+        }
+      }
+    }
+
+    // 4. Delete Database records
     await (_db.delete(_db.books)..where((t) => t.id.equals(id))).go();
     await (_db.delete(
       _db.readingProgress,
     )..where((t) => t.bookId.equals(id))).go();
     await (_db.delete(_db.quotes)..where((t) => t.bookId.equals(id))).go();
+    await (_db.delete(_db.bookNotes)..where((t) => t.bookId.equals(id))).go();
   }
 
   Future<String> addHighlight(String bookId, String text, String cfi) async {

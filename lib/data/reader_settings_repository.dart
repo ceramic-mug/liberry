@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../ui/reader/reader_models.dart';
+import '../providers.dart';
 
 class ReaderSettingsRepository {
   final SharedPreferences _prefs;
@@ -47,10 +48,6 @@ class ReaderSettingsRepository {
     await _prefs.setString(_keyFontFamily, family);
   }
 }
-
-final sharedPreferencesProvider = Provider<SharedPreferences>((ref) {
-  throw UnimplementedError();
-});
 
 final readerSettingsRepositoryProvider = Provider<ReaderSettingsRepository>((
   ref,

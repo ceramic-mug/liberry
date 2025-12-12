@@ -15,6 +15,7 @@ class DownloadManager {
     String url,
     String title, {
     String? coverUrl,
+    String? sourceMetadata,
   }) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
@@ -29,6 +30,7 @@ class DownloadManager {
         filename,
         remoteCoverUrl: coverUrl,
         downloadUrl: url,
+        sourceMetadata: sourceMetadata,
       );
     } catch (e) {
       rethrow;
