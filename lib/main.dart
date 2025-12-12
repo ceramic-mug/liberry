@@ -6,6 +6,7 @@ import 'ui/discover_screen.dart';
 import 'ui/notes_screen.dart';
 import 'ui/splash_screen.dart';
 import 'ui/library_screen.dart';
+import 'providers.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,38 +36,36 @@ class MyApp extends StatelessWidget {
   }
 }
 
-class HomeScreen extends StatefulWidget {
+class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
 
   @override
-  State<HomeScreen> createState() => _HomeScreenState();
+  ConsumerState<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
-  int _selectedIndex = 0;
-
+class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final List<Widget> _widgetOptions;
 
   @override
   void initState() {
     super.initState();
     _widgetOptions = <Widget>[
-      LibraryScreen(onNavigateToDiscover: () => _onItemTapped(2)),
+      LibraryScreen(onNavigateToDiscover: () => _updateIndex(2)),
       const NotesScreen(),
       const DiscoverScreen(),
     ];
   }
 
-  void _onItemTapped(int index) {
-    setState(() {
-      _selectedIndex = index;
-    });
+  void _updateIndex(int index) {
+    ref.read(navigationIndexProvider.notifier).setIndex(index);
   }
 
   @override
   Widget build(BuildContext context) {
+    final selectedIndex = ref.watch(navigationIndexProvider);
+
     return Scaffold(
-      body: _widgetOptions.elementAt(_selectedIndex),
+      body: _widgetOptions.elementAt(selectedIndex),
       bottomNavigationBar: BottomNavigationBar(
         type: BottomNavigationBarType.fixed, // Needed for 4+ items
         items: const <BottomNavigationBarItem>[
@@ -80,9 +79,9 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           BottomNavigationBarItem(icon: Icon(Icons.explore), label: 'Discover'),
         ],
-        currentIndex: _selectedIndex,
+        currentIndex: selectedIndex,
         selectedItemColor: Theme.of(context).colorScheme.primary,
-        onTap: _onItemTapped,
+        onTap: _updateIndex,
       ),
     );
   }

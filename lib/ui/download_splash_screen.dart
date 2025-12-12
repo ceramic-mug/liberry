@@ -1,17 +1,27 @@
 import 'dart:convert';
+import 'dart:io';
+import 'dart:ui'; // For ImageFilter
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'package:share_plus/share_plus.dart';
 import '../data/remote/remote_book.dart';
 import '../providers.dart';
 
-import '../data/kindle_settings_repository.dart'; // Still needed for refresh event if we want to listen, but helper does work
 import 'common/kindle_helper.dart';
 import 'reader_screen.dart';
 
+// Now functions as a "Book Preview" screen before downloading
 class DownloadSplashScreen extends ConsumerStatefulWidget {
   final RemoteBook book;
+  final bool autoStartDownload;
 
-  const DownloadSplashScreen({super.key, required this.book});
+  const DownloadSplashScreen({
+    super.key,
+    required this.book,
+    this.autoStartDownload = false,
+  });
 
   @override
   ConsumerState<DownloadSplashScreen> createState() =>
@@ -26,14 +36,12 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
 
   // Download state
   String? _bookId;
-  bool _isDownloading = true;
+  bool _isDownloading = false;
   String? _error;
+
+  // Animation for downloading state
   late AnimationController _pulseController;
   late Animation<double> _pulseAnimation;
-
-  // Kindle Email state
-  // Kindle Devices state
-  List<KindleDevice> _kindleDevices = [];
 
   @override
   void initState() {
@@ -47,24 +55,8 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Load Kindle devices
-    _refreshKindleDevices();
-
-    _startDownload();
-  }
-
-  void _refreshKindleDevices() {
-    // With KindleHelper, we might not need to strictly maintain this list locally if we delegate everything,
-    // but showing the 'edit' icon conditional on having devices requires it.
-    // For now, let's keep it sync.
-    try {
-      setState(() {
-        _kindleDevices = ref
-            .read(kindleSettingsRepositoryProvider)
-            .getDevices();
-      });
-    } catch (_) {
-      // Provider might not be ready
+    if (widget.autoStartDownload) {
+      _startDownload();
     }
   }
 
@@ -78,10 +70,15 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
     if (widget.book.downloadUrl == null) {
       setState(() {
         _error = 'No download URL available.';
-        _isDownloading = false;
+        _isDownloading = false; // Show error state
       });
       return;
     }
+
+    setState(() {
+      _isDownloading = true;
+      _error = null;
+    });
 
     try {
       final bookId = await ref
@@ -92,10 +89,17 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
             coverUrl: widget.book.coverUrl,
           );
 
+      // Auto-categorize as "Desk" and "Not Started"
+      await ref.read(bookRepositoryProvider).updateBookLocation(bookId, 'desk');
+      await ref
+          .read(bookRepositoryProvider)
+          .updateBookStatus(bookId, 'not_started');
+
       if (mounted) {
         setState(() {
           _bookId = bookId;
           _isDownloading = false;
+          _addedToDesk = true; // Mark as added since we did it auto
         });
       }
     } catch (e) {
@@ -112,10 +116,8 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
     if (_bookId == null) return;
     final book = await ref.read(bookRepositoryProvider).getBook(_bookId!);
     if (book != null && mounted) {
-      await ref
-          .read(bookRepositoryProvider)
-          .updateBookStatus(_bookId!, 'reading');
-
+      // Just open, don't change status to reading yet unless Reader does it (it usually does).
+      // actually user preferred "Not Started" on download, so let's respect that until they actively read.
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(builder: (context) => ReaderScreen(book: book)),
@@ -129,8 +131,7 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
     if (mounted) {
       setState(() {
         _addedToDesk = true;
-        _addedToBookshelf =
-            false; // Mutually exclusive usually, or can be both? Book model has single 'group'. Assuming exclusive.
+        _addedToBookshelf = false;
       });
     }
   }
@@ -149,42 +150,101 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
   }
 
   void _handleGoToLibrary() {
-    // Pop until we are at root, then maybe switch tab?
-    // Assuming Library is a main tab. Navigation structure is complex.
-    // For now, let's pop everything (to Discover) and let user navigate,
-    // OR if we can, find the MainScreen and switch index.
-    // Simplifying: Pop splash, let user navigate.
-    // Wait, user explicitly asked to "go to library".
-    // If we pop, we are back in Discover.
-    // We can pop, then try to navigate.
+    // Reset to library tab
+    ref.read(navigationIndexProvider.notifier).setIndex(0);
+    // Pop to root to ensure we are back at the main screen
     Navigator.of(context).popUntil((route) => route.isFirst);
-    // TODO: Implement cleaner navigation to specific tab if possible.
-    // For now this returns to home.
   }
 
-  Future<void> _handleSendToKindle() async {
+  void _showShareSheet() async {
     if (_bookId == null) return;
-
-    // We can use the helper now
     final book = await ref.read(bookRepositoryProvider).getBook(_bookId!);
-    if (book != null && mounted) {
-      await KindleHelper(
-        context: context,
-        ref: ref,
-      ).handleSendToKindle(filePath: book.filePath, bookTitle: book.title);
-      // Refresh local state to update UI (show/hide settings icon)
-      _refreshKindleDevices();
-    }
+    if (book == null || !mounted) return;
+
+    showModalBottomSheet(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 12),
+              Text(
+                'Share Book',
+                style: Theme.of(
+                  sheetContext,
+                ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 12),
+              ListTile(
+                leading: const Icon(Icons.send),
+                title: const Text('Send to Kindle'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.settings_remote, color: Colors.grey),
+                  tooltip: 'Manage Kindle Devices',
+                  onPressed: () async {
+                    await KindleHelper(
+                      context: context,
+                      ref: ref,
+                    ).showManageDevicesDialog();
+                  },
+                ),
+                onTap: () async {
+                  Navigator.pop(sheetContext); // Close sheet
+
+                  // Resolve cover path logic identical to BookDetails
+                  // Since we just downloaded it, it might still only have a URL or a local path.
+                  // Book entity has coverPath.
+                  String? resolvedCoverPath;
+                  if (book.coverPath != null) {
+                    final appDir = await getApplicationDocumentsDirectory();
+                    final path = book.coverPath!;
+                    final fullPath = p.isAbsolute(path)
+                        ? path
+                        : p.join(appDir.path, path);
+                    if (await File(fullPath).exists()) {
+                      resolvedCoverPath = fullPath;
+                    }
+                  }
+
+                  await KindleHelper(
+                    context: context,
+                    ref: ref,
+                  ).handleSendToKindle(
+                    filePath: book.filePath,
+                    bookTitle: book.title,
+                    coverPath: resolvedCoverPath,
+                  );
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.share),
+                title: const Text('Share File'),
+                onTap: () async {
+                  Navigator.pop(sheetContext); // Close sheet
+                  final file = File(book.filePath);
+                  if (await file.exists()) {
+                    await Share.shareXFiles([
+                      XFile(book.filePath),
+                    ], text: 'Check out this book: ${book.title}');
+                  } else {
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('Book file not found')),
+                      );
+                    }
+                  }
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
+          ),
+        );
+      },
+    );
   }
 
-  Future<void> _showManageDevicesDialog() async {
-    await KindleHelper(context: context, ref: ref).showManageDevicesDialog();
-    _refreshKindleDevices();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    // Try to parse cover if data URI
+  Widget _buildCover({bool large = false}) {
     Widget coverWidget;
     if (widget.book.coverUrl != null) {
       if (widget.book.coverUrl!.startsWith('data:')) {
@@ -215,23 +275,93 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
       );
     }
 
+    return Container(
+      width: large ? 180 : 120,
+      height: large ? 270 : 180,
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.5),
+            blurRadius: 20,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: coverWidget,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Background setup
+    Widget bgCover;
+    if (widget.book.coverUrl != null &&
+        widget.book.coverUrl!.startsWith('data:')) {
+      try {
+        bgCover = Image.memory(
+          base64Decode(widget.book.coverUrl!.split(',').last),
+          fit: BoxFit.cover,
+        );
+      } catch (_) {
+        bgCover = Container(color: Colors.black);
+      }
+    } else if (widget.book.coverUrl != null) {
+      bgCover = Image.network(
+        widget.book.coverUrl!,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => Container(color: Colors.black),
+      );
+    } else {
+      bgCover = Container(color: Colors.black);
+    }
+
+    final isSuccess = !_isDownloading && _bookId != null;
+
     return Scaffold(
-      backgroundColor: Colors.black, // Dark immersive background
+      backgroundColor: Colors.black,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          // Blurred Background
-          Opacity(
-            opacity: 0.3,
+          // Background - Static, blurred, and opaque to prevent ghosting
+          SizedBox.expand(
             child: ImageFiltered(
-              imageFilter: const ColorFilter.mode(Colors.black, BlendMode.dst),
-              // Re-doing background: just a dark container with the cover large and blurred
-              child: Transform.scale(scale: 2.0, child: coverWidget),
+              imageFilter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+              child: Transform.scale(
+                scale: 1.2, // Slight scale to avoid blur edges
+                child: bgCover,
+              ),
             ),
           ),
 
-          // Dark Overlay
-          Container(color: Colors.black.withOpacity(0.85)),
+          // Dimming Overlay
+          Container(color: Colors.black.withOpacity(0.6)),
+
+          // Navigation Back Button
+          Positioned(
+            top: MediaQuery.of(context).padding.top + 16,
+            left: 16,
+            child: IconButton(
+              onPressed: () => Navigator.pop(context),
+              icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
+            ),
+          ),
+
+          // Share Button (Only on success)
+          if (isSuccess)
+            Positioned(
+              top: MediaQuery.of(context).padding.top + 16,
+              right: 16,
+              child: IconButton(
+                onPressed: _showShareSheet,
+                icon: const Icon(
+                  Icons.ios_share,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+            ),
 
           SafeArea(
             child: Padding(
@@ -242,25 +372,14 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
                   const Spacer(),
 
                   // Cover
-                  ScaleTransition(
-                    scale: _pulseAnimation,
-                    child: Container(
-                      width: 180,
-                      height: 270,
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(16),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.5),
-                            blurRadius: 20,
-                            offset: const Offset(0, 10),
-                          ),
-                        ],
-                      ),
-                      clipBehavior: Clip.antiAlias,
-                      child: coverWidget,
-                    ),
-                  ),
+                  // Use Hero for smooth transition if not actively downloading/pulsing
+                  if (_isDownloading)
+                    ScaleTransition(
+                      scale: _pulseAnimation,
+                      child: _buildCover(large: true),
+                    )
+                  else
+                    _buildCover(large: true),
 
                   const SizedBox(height: 40),
 
@@ -288,8 +407,54 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
 
                   const SizedBox(height: 50),
 
-                  // Status / Actions
-                  if (_isDownloading) ...[
+                  // ==========================
+                  // STATE 1: PREVIEW (Download Button)
+                  // ==========================
+                  if (!_isDownloading && _bookId == null) ...[
+                    if (_error != null) ...[
+                      Icon(
+                        Icons.error_outline,
+                        color: Colors.red[300],
+                        size: 48,
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        _error!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.red[100]),
+                      ),
+                      const SizedBox(height: 24),
+                      OutlinedButton(
+                        onPressed: _startDownload,
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: Colors.white,
+                          side: const BorderSide(color: Colors.white30),
+                        ),
+                        child: const Text("Retry"),
+                      ),
+                    ] else ...[
+                      SizedBox(
+                        width: double.infinity,
+                        child: FilledButton.icon(
+                          onPressed: _startDownload,
+                          icon: const Icon(Icons.download),
+                          label: const Text("Download to Library"),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: Colors.white,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ]
+                  // ==========================
+                  // STATE 2: DOWNLOADING
+                  // ==========================
+                  else if (_isDownloading) ...[
                     const CircularProgressIndicator(color: Colors.white),
                     const SizedBox(height: 20),
                     Text(
@@ -299,39 +464,11 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
                         fontSize: 14,
                       ),
                     ),
-                  ] else if (_error != null) ...[
-                    Icon(Icons.error_outline, color: Colors.red[300], size: 48),
-                    const SizedBox(height: 16),
-                    Text(
-                      _error!,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(color: Colors.red[100]),
-                    ),
-                    const SizedBox(height: 24),
-                    OutlinedButton(
-                      onPressed: () {
-                        setState(() {
-                          _error = null;
-                          _isDownloading = true;
-                        });
-                        _startDownload();
-                      },
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: Colors.white,
-                        side: const BorderSide(color: Colors.white30),
-                      ),
-                      child: const Text("Retry"),
-                    ),
-                    const SizedBox(height: 16),
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text(
-                        "Cancel",
-                        style: TextStyle(color: Colors.white54),
-                      ),
-                    ),
-                  ] else ...[
-                    // Success Actions
+                  ]
+                  // ==========================
+                  // STATE 3: SUCCESS (Post-Download Options)
+                  // ==========================
+                  else ...[
                     SizedBox(
                       width: double.infinity,
                       child: FilledButton.icon(
@@ -417,63 +554,15 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
                         ),
                       ],
                     ),
+
                     const SizedBox(height: 16),
-                    SizedBox(
-                      width: double.infinity,
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: OutlinedButton.icon(
-                              onPressed: _handleSendToKindle,
-                              icon: const Icon(Icons.send),
-                              label: const Text("Send to Kindle"),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.white,
-                                side: const BorderSide(color: Colors.white30),
-                                padding: const EdgeInsets.symmetric(
-                                  vertical: 16,
-                                ),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                            ),
-                          ),
-                          if (_kindleDevices.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            IconButton(
-                              onPressed: _showManageDevicesDialog,
-                              icon: const Icon(
-                                Icons.settings_remote,
-                                color: Colors.white54,
-                              ),
-                              tooltip: 'Manage Kindle Devices',
-                            ),
-                          ],
-                        ],
+                    TextButton(
+                      onPressed: _handleGoToLibrary,
+                      child: const Text(
+                        "Go to Library",
+                        style: TextStyle(color: Colors.white70, fontSize: 16),
                       ),
                     ),
-
-                    if (_addedToDesk || _addedToBookshelf) ...[
-                      const SizedBox(height: 24),
-                      Divider(color: Colors.white.withOpacity(0.1)),
-                      const SizedBox(height: 16),
-                      // Additional Navigation options once action is taken
-                      TextButton(
-                        onPressed: _handleGoToLibrary,
-                        child: const Text(
-                          "Go to Library",
-                          style: TextStyle(color: Colors.white70, fontSize: 16),
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: () => Navigator.pop(context),
-                        child: const Text(
-                          "Discover More Books",
-                          style: TextStyle(color: Colors.white54, fontSize: 14),
-                        ),
-                      ),
-                    ],
                   ],
 
                   const Spacer(),

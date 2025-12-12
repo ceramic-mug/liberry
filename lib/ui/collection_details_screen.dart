@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../data/database.dart'; // For Book
 import '../data/book_collections.dart';
 import '../data/remote/remote_book.dart';
 import '../providers.dart';
-import 'discover_screen.dart'; // For RemoteBookTile
+import 'common/remote_book_tile.dart';
 
 class CollectionDetailsScreen extends ConsumerStatefulWidget {
   final BookCollection collection;
@@ -140,7 +141,7 @@ class _CollectionDetailsScreenState
 
   Future<void> _resolveBooks() async {
     final localService = ref.read(localEbooksServiceProvider);
-    final gutendexService = ref.read(gutendexServiceProvider);
+    final offlineGutenbergService = ref.read(offlineGutenbergServiceProvider);
 
     await Future.wait(
       widget.collection.books.map((book) async {
@@ -171,12 +172,29 @@ class _CollectionDetailsScreenState
             }
           }
 
-          // 2. Try Gutendex
+          // 2. Try Offline Gutenberg
           if (bestMatch == null) {
             try {
-              var pgResults = await gutendexService.searchBooks(searchTitle);
+              // Helper to search and map
+              Future<List<RemoteBook>> searchOffline(String q) async {
+                final results = await offlineGutenbergService.searchBooks(q);
+                return results.map((map) {
+                  final id = map['id'] as int;
+                  return RemoteBook(
+                    title: map['title'] as String,
+                    author: map['author'] as String,
+                    coverUrl:
+                        'https://www.gutenberg.org/cache/epub/$id/pg$id.cover.medium.jpg',
+                    downloadUrl:
+                        'https://www.gutenberg.org/ebooks/$id.epub.images',
+                    source: 'Project Gutenberg',
+                  );
+                }).toList();
+              }
+
+              var pgResults = await searchOffline(searchTitle);
               if (pgResults.isEmpty && searchTitle != book.title) {
-                pgResults = await gutendexService.searchBooks(book.title);
+                pgResults = await searchOffline(book.title);
               }
 
               if (pgResults.isNotEmpty) {
@@ -189,7 +207,7 @@ class _CollectionDetailsScreenState
                 }
               }
             } catch (e) {
-              // Gutendex failed
+              // Offline search failed
             }
           }
 
@@ -213,6 +231,7 @@ class _CollectionDetailsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final localBookMap = ref.watch(localBookMapProvider);
     final Map<String, List<CollectionBook>> groupedBooks = {};
     if (widget.collection.books.any((b) => b.group != null)) {
       for (var b in widget.collection.books) {
@@ -246,7 +265,9 @@ class _CollectionDetailsScreenState
 
             if (groupTitle.isEmpty) {
               return Column(
-                children: books.map((b) => _buildBookTile(b)).toList(),
+                children: books
+                    .map((b) => _buildBookTile(b, localBookMap))
+                    .toList(),
               );
             }
 
@@ -264,7 +285,21 @@ class _CollectionDetailsScreenState
                     ),
                   ),
                 ),
-                ...books.map((b) => _buildBookTile(b)),
+                ...books.map((b) {
+                  if (_resolvedBooks.containsKey(b)) {
+                    final remoteBook = _resolvedBooks[b]!;
+                    return RemoteBookTile(
+                      book: remoteBook,
+                      isStandardEbook: remoteBook.source == 'Standard Ebooks',
+                      localBookMap: localBookMap,
+                    );
+                  } else {
+                    return _CollectionBookTile(
+                      book: b,
+                      onSearch: widget.onSearch,
+                    );
+                  }
+                }).toList(),
               ],
             );
           }),
@@ -274,12 +309,13 @@ class _CollectionDetailsScreenState
     );
   }
 
-  Widget _buildBookTile(CollectionBook book) {
+  Widget _buildBookTile(CollectionBook book, Map<String, Book>? localBookMap) {
     if (_resolvedBooks.containsKey(book)) {
       final remoteBook = _resolvedBooks[book]!;
       return RemoteBookTile(
         book: remoteBook,
         isStandardEbook: remoteBook.source == 'Standard Ebooks',
+        localBookMap: localBookMap,
       );
     } else {
       return _CollectionBookTile(book: book, onSearch: widget.onSearch);

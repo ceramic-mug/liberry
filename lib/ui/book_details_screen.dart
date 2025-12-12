@@ -179,6 +179,31 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
     );
   }
 
+  void _confirmOffload(BuildContext context, Book book) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Offload Book'),
+        content: const Text(
+          'This will delete the book content to save space, but keep all your metadata (highlights, notes, reading progress, cover, spine). You can redownload it anytime.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog
+              await ref.read(bookRepositoryProvider).offloadBook(book.id);
+            },
+            child: const Text('Offload'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showAddCharacterDialog(String bookId) async {
     final nameController = TextEditingController();
     await showDialog(
@@ -290,7 +315,7 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
   void _showShareSheet(Book book) {
     showModalBottomSheet(
       context: context,
-      builder: (context) {
+      builder: (sheetContext) {
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -299,21 +324,50 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
               Text(
                 'Share Book',
                 style: Theme.of(
-                  context,
+                  sheetContext,
                 ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 12),
               ListTile(
                 leading: const Icon(Icons.send),
                 title: const Text('Send to Kindle'),
+                trailing: IconButton(
+                  icon: const Icon(Icons.settings_remote, color: Colors.grey),
+                  tooltip: 'Manage Kindle Devices',
+                  onPressed: () async {
+                    // Don't close sheet, just show dialog on top?
+                    // Actually, usually managing devices is a distracting task.
+                    // Let's keep sheet open if possible or let the dialog handle it.
+                    // The helper shows a dialog.
+                    await KindleHelper(
+                      context: context,
+                      ref: ref,
+                    ).showManageDevicesDialog();
+                  },
+                ),
                 onTap: () async {
-                  Navigator.pop(context); // Close sheet
+                  Navigator.pop(sheetContext); // Close sheet
+
+                  // Resolve cover path
+                  String? resolvedCoverPath;
+                  if (book.coverPath != null) {
+                    final appDir = await getApplicationDocumentsDirectory();
+                    final path = book.coverPath!;
+                    final fullPath = p.isAbsolute(path)
+                        ? path
+                        : p.join(appDir.path, path);
+                    if (await File(fullPath).exists()) {
+                      resolvedCoverPath = fullPath;
+                    }
+                  }
+
                   await KindleHelper(
                     context: context,
                     ref: ref,
                   ).handleSendToKindle(
                     filePath: book.filePath,
                     bookTitle: book.title,
+                    coverPath: resolvedCoverPath, // Pass the resolved cover
                   );
                 },
               ),
@@ -321,7 +375,7 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                 leading: const Icon(Icons.share),
                 title: const Text('Share File'),
                 onTap: () async {
-                  Navigator.pop(context); // Close sheet
+                  Navigator.pop(sheetContext); // Close sheet
                   final file = File(book.filePath);
                   if (await file.exists()) {
                     await Share.shareXFiles([
@@ -366,22 +420,15 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                 tooltip: 'Share',
                 onPressed: () => _showShareSheet(book),
               ),
-              IconButton(
-                icon: Icon(
-                  book.status == 'read'
-                      ? Icons.check_circle
-                      : Icons.check_circle_outline,
-                  color: book.status == 'read' ? Colors.green : null,
-                ),
-                tooltip: 'Change Status',
-                onPressed: () => _showStatusSelector(book),
-              ),
+
               PopupMenuButton<String>(
                 onSelected: (value) {
                   if (value == 'delete') {
                     _confirmDelete(context, book);
                   } else if (value == 'location') {
                     _showLocationSelector(book);
+                  } else if (value == 'offload') {
+                    _confirmOffload(context, book);
                   }
                 },
                 itemBuilder: (BuildContext context) => [
@@ -395,6 +442,17 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                       ],
                     ),
                   ),
+                  if (book.isDownloaded && book.downloadUrl != null)
+                    const PopupMenuItem(
+                      value: 'offload',
+                      child: Row(
+                        children: [
+                          Icon(Icons.cloud_upload_outlined, color: Colors.blue),
+                          SizedBox(width: 8),
+                          Text('Offload Book'),
+                        ],
+                      ),
+                    ),
                   const PopupMenuItem(
                     value: 'delete',
                     child: Row(
@@ -695,41 +753,64 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
   Widget _buildActionRow(Book book) {
     return Row(
       children: [
-        // Primary Action: Read
+        // Primary Action: Read or Download
         Expanded(
           flex: 2,
           child: FilledButton.icon(
-            onPressed: book.isDownloaded
-                ? () async {
-                    String filePath = book.filePath;
-                    final file = File(filePath);
-                    if (!await file.exists()) {
-                      // Attempt recovery logic omitted for brevity, keeping simple for now
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text("File not found")),
-                        );
-                      }
-                      return;
-                    }
-                    if (context.mounted) {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => ReaderScreen(book: book),
-                        ),
-                      );
-                    }
+            onPressed: () async {
+              if (book.isDownloaded) {
+                // Read
+                String filePath = book.filePath;
+                final file = File(filePath);
+                if (!await file.exists()) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("File not found")),
+                    );
                   }
-                : null, // TODO: Handle download/restore
+                  return;
+                }
+                if (context.mounted) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => ReaderScreen(book: book),
+                    ),
+                  );
+                }
+              } else {
+                // Download
+                try {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text("Downloading...")),
+                  );
+                  await ref
+                      .read(downloadManagerProvider)
+                      .redownloadBook(book.id);
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text("Book downloaded")),
+                    );
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text("Download failed: $e")),
+                    );
+                  }
+                }
+              }
+            },
             style: FilledButton.styleFrom(
               padding: const EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
               ),
             ),
-            icon: const Icon(Icons.menu_book_rounded),
-            label: const Text('Read'),
+            icon: Icon(
+              book.isDownloaded ? Icons.menu_book_rounded : Icons.download,
+            ),
+            label: Text(book.isDownloaded ? 'Read' : 'Download'),
           ),
         ),
         const SizedBox(width: 12),

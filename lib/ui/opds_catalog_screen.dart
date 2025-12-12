@@ -3,7 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/remote/opds_models.dart';
 import '../data/remote/remote_book.dart';
 import '../providers.dart';
-import 'discover_screen.dart'; // For RemoteBookTile
+import '../data/database.dart'; // For Book
+import 'common/remote_book_tile.dart';
 
 enum SortBy { title, author }
 
@@ -176,6 +177,8 @@ class _OpdsCatalogScreenState extends ConsumerState<OpdsCatalogScreen>
 
   @override
   Widget build(BuildContext context) {
+    final localBookMap = ref.watch(localBookMapProvider);
+
     if (widget.showStandardEbooksTabs) {
       // Standard Ebooks Mode
       return Scaffold(
@@ -197,8 +200,8 @@ class _OpdsCatalogScreenState extends ConsumerState<OpdsCatalogScreen>
               child: TabBarView(
                 controller: _tabController,
                 children: [
-                  _buildFeedView(_subjectsFeed),
-                  _buildFeedView(_authorsFeed),
+                  _buildFeedView(_subjectsFeed, localBookMap),
+                  _buildFeedView(_authorsFeed, localBookMap),
                 ],
               ),
             ),
@@ -212,7 +215,7 @@ class _OpdsCatalogScreenState extends ConsumerState<OpdsCatalogScreen>
       children: [
         if (widget.headerBuilder != null) widget.headerBuilder!(context),
         _buildSearchBar(),
-        Expanded(child: _buildFeedView(_currentFeed)),
+        Expanded(child: _buildFeedView(_currentFeed, localBookMap)),
       ],
     );
 
@@ -289,7 +292,7 @@ class _OpdsCatalogScreenState extends ConsumerState<OpdsCatalogScreen>
     );
   }
 
-  Widget _buildFeedView(OpdsFeed? feed) {
+  Widget _buildFeedView(OpdsFeed? feed, Map<String, Book>? localBookMap) {
     if (_isLoading && feed == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -479,6 +482,7 @@ class _OpdsCatalogScreenState extends ConsumerState<OpdsCatalogScreen>
                       child: RemoteBookTile(
                         book: mockBook,
                         isStandardEbook: false,
+                        localBookMap: localBookMap,
                       ),
                     ),
                   );

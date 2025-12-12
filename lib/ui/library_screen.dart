@@ -27,6 +27,25 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   SortOption _sortOption = SortOption.dateAdded;
   final TextEditingController _searchController = TextEditingController();
   Set<String> _statusFilters = {};
+  final Set<String> _selectedBookIds = {};
+
+  bool get _isSelectionMode => _selectedBookIds.isNotEmpty;
+
+  void _toggleSelection(Book book) {
+    setState(() {
+      if (_selectedBookIds.contains(book.id)) {
+        _selectedBookIds.remove(book.id);
+      } else {
+        _selectedBookIds.add(book.id);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() {
+      _selectedBookIds.clear();
+    });
+  }
 
   @override
   void dispose() {
@@ -155,14 +174,30 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final bookRepo = ref.watch(bookRepositoryProvider);
-    final booksStream = bookRepo.watchAllBooks();
+    final booksAsyncValue = ref.watch(allBooksProvider);
+    final booksList = booksAsyncValue.asData?.value ?? [];
+    final downloadableCount = booksList
+        .where(
+          (b) =>
+              _selectedBookIds.contains(b.id) &&
+              !b.isDownloaded &&
+              b.downloadUrl != null,
+        )
+        .length;
 
     return DefaultTabController(
       length: 2,
       child: Scaffold(
         appBar: AppBar(
-          title: _isSearching
+          leading: _isSelectionMode
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: _clearSelection,
+                )
+              : null,
+          title: _isSelectionMode
+              ? Text('${_selectedBookIds.length} selected')
+              : _isSearching
               ? TextField(
                   controller: _searchController,
                   autofocus: true,
@@ -184,9 +219,31 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ],
                 ),
           centerTitle: false,
-          titleSpacing: 16,
+          titleSpacing: _isSelectionMode ? 0 : 16,
           actions: [
-            if (_isSearching)
+            if (_isSelectionMode) ...[
+              if (downloadableCount > 0)
+                IconButton(
+                  icon: const Icon(Icons.cloud_download),
+                  tooltip: 'Download Selected',
+                  onPressed: _confirmDownloadSelected,
+                ),
+              IconButton(
+                icon: const Icon(Icons.swap_horiz),
+                tooltip: 'Move Selected',
+                onPressed: _showMoveOptions,
+              ),
+              IconButton(
+                icon: const Icon(Icons.cloud_off),
+                tooltip: 'Offload',
+                onPressed: _confirmOffloadSelected,
+              ),
+              IconButton(
+                icon: const Icon(Icons.delete),
+                tooltip: 'Delete',
+                onPressed: _confirmDeleteSelected,
+              ),
+            ] else if (_isSearching)
               IconButton(
                 icon: const Icon(Icons.close),
                 onPressed: () {
@@ -250,17 +307,9 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   ],
                 ),
         ),
-        body: StreamBuilder<List<Book>>(
-          stream: booksStream,
-          builder: (context, snapshot) {
-            if (snapshot.hasError) {
-              return Center(child: Text('Error: ${snapshot.error}'));
-            }
-            if (!snapshot.hasData) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            var books = snapshot.data!;
+        body: booksAsyncValue.when(
+          data: (allBooks) {
+            var books = allBooks;
 
             // 0. Filter by Status (Global)
             if (_statusFilters.isNotEmpty) {
@@ -325,6 +374,8 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
               ],
             );
           },
+          loading: () => const Center(child: CircularProgressIndicator()),
+          error: (e, s) => Center(child: Text('Error: $e')),
         ),
         floatingActionButton: FloatingActionButton(
           onPressed: widget.onNavigateToDiscover,
@@ -367,7 +418,12 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       itemCount: books.length,
       itemBuilder: (context, index) {
         final book = books[index];
-        return BookItem(book: book);
+        return BookItem(
+          book: book,
+          isSelected: _selectedBookIds.contains(book.id),
+          isSelectionMode: _isSelectionMode,
+          onToggleSelection: () => _toggleSelection(book),
+        );
       },
     );
   }
@@ -378,30 +434,241 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
       itemCount: books.length,
       itemBuilder: (context, index) {
         final book = books[index];
-        return BookSpineItem(book: book);
+        return BookSpineItem(
+          book: book,
+          isSelected: _selectedBookIds.contains(book.id),
+          isSelectionMode: _isSelectionMode,
+          onToggleSelection: () => _toggleSelection(book),
+        );
       },
     );
+  }
+
+  void _showMoveOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.table_restaurant),
+                title: const Text('Move to Desk'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _moveSelectedBooks('reading'); // 'reading' is aka Desk
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.shelves),
+                title: const Text('Move to Bookshelf'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _moveSelectedBooks('bookshelf');
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _moveSelectedBooks(String group) async {
+    final bookRepo = ref.read(bookRepositoryProvider);
+    final count = _selectedBookIds.length;
+    for (final id in _selectedBookIds) {
+      await bookRepo.setBookGroup(id, group);
+    }
+    _clearSelection();
+    if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Moved $count books.')));
+    }
+  }
+
+  Future<void> _confirmDownloadSelected() async {
+    final bookRepo = ref.read(bookRepositoryProvider);
+    final selectedBooks =
+        (await bookRepo.getAllBooks()) // Inefficient but safe for now
+            .where(
+              (b) =>
+                  _selectedBookIds.contains(b.id) &&
+                  !b.isDownloaded &&
+                  b.downloadUrl != null,
+            )
+            .toList();
+
+    if (selectedBooks.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No downloadable books selected.')),
+        );
+      }
+      return;
+    }
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Download Selected Books?'),
+        content: Text(
+          'This will download ${selectedBooks.length} books to your device.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Download'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final downloadManager = ref.read(downloadManagerProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Starting download of ${selectedBooks.length} books...',
+            ),
+          ),
+        );
+      }
+      _clearSelection();
+
+      // Download sequentially to avoid overwhelming
+      for (final book in selectedBooks) {
+        try {
+          await downloadManager.redownloadBook(book.id);
+        } catch (e) {
+          debugPrint('Failed to download book ${book.id}: $e');
+        }
+      }
+
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Downloads finished.')));
+      }
+    }
+  }
+
+  Future<void> _confirmOffloadSelected() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Offload Selected Books?'),
+        content: Text(
+          'This will remove the local files for ${_selectedBookIds.length} books to save space. Metadata will be kept.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Offload'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final bookRepo = ref.read(bookRepositoryProvider);
+      final count = _selectedBookIds.length;
+      for (final id in _selectedBookIds) {
+        await bookRepo.offloadBook(id);
+      }
+      _clearSelection();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Offloaded $count books.')));
+      }
+    }
+  }
+
+  Future<void> _confirmDeleteSelected() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Selected Books?'),
+        content: Text(
+          'Are you sure you want to completely delete ${_selectedBookIds.length} books? This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final bookRepo = ref.read(bookRepositoryProvider);
+      final count = _selectedBookIds.length;
+      for (final id in _selectedBookIds) {
+        await bookRepo.deleteBook(id);
+      }
+      _clearSelection();
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Deleted $count books.')));
+      }
+    }
   }
 }
 
 class BookItem extends ConsumerWidget {
   final Book book;
+  final bool isSelected;
+  final bool isSelectionMode;
+  final VoidCallback? onToggleSelection;
 
-  const BookItem({super.key, required this.book});
+  const BookItem({
+    super.key,
+    required this.book,
+    this.isSelected = false,
+    this.isSelectionMode = false,
+    this.onToggleSelection,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => BookDetailsScreen(book: book),
-          ),
-        );
+        if (isSelectionMode) {
+          onToggleSelection?.call();
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BookDetailsScreen(book: book),
+            ),
+          );
+        }
       },
       onLongPress: () {
-        _showOptionsDialog(context, ref, book);
+        if (!isSelectionMode) {
+          onToggleSelection?.call();
+        } else {
+          _showOptionsDialog(context, ref, book);
+        }
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -509,6 +776,20 @@ class BookItem extends ConsumerWidget {
                         ),
                       ),
                     ),
+                  if (isSelected)
+                    Container(
+                      decoration: BoxDecoration(
+                        color: Colors.black.withOpacity(0.4),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Center(
+                        child: Icon(
+                          Icons.check_circle,
+                          color: Colors.white,
+                          size: 40,
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -537,32 +818,49 @@ class BookItem extends ConsumerWidget {
 
 class BookSpineItem extends ConsumerWidget {
   final Book book;
+  final bool isSelected;
+  final bool isSelectionMode;
+  final VoidCallback? onToggleSelection;
 
-  const BookSpineItem({super.key, required this.book});
+  const BookSpineItem({
+    super.key,
+    required this.book,
+    this.isSelected = false,
+    this.isSelectionMode = false,
+    this.onToggleSelection,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return GestureDetector(
       onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => BookDetailsScreen(book: book),
-          ),
-        );
+        if (isSelectionMode) {
+          onToggleSelection?.call();
+        } else {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => BookDetailsScreen(book: book),
+            ),
+          );
+        }
       },
       onLongPress: () {
-        _showOptionsDialog(context, ref, book);
+        if (!isSelectionMode) {
+          onToggleSelection?.call();
+        } else {
+          _showOptionsDialog(context, ref, book);
+        }
       },
       child: Container(
         height: 60, // Fixed height for spine effect
         margin: const EdgeInsets.only(bottom: 8),
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
-          color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(
-            4,
-          ), // Slightly rounded corners like a spine
+          color: isSelected
+              ? Theme.of(context).primaryColor.withOpacity(0.1)
+              : Theme.of(context).cardColor,
+          borderRadius: BorderRadius.circular(4),
           border: Border(
             left: BorderSide(
               color: Theme.of(context).primaryColor.withOpacity(0.5),
@@ -587,6 +885,10 @@ class BookSpineItem extends ConsumerWidget {
                 child: BookCoverImage(book: book),
               ),
             ),
+            if (isSelected) ...[
+              const SizedBox(width: 16),
+              Icon(Icons.check_circle, color: Theme.of(context).primaryColor),
+            ],
             const SizedBox(width: 16),
             // Title and Author
             Expanded(

@@ -12,7 +12,11 @@ class BookRepository {
 
   BookRepository(this._db);
 
-  Future<String> addBook(String filePath, {String? remoteCoverUrl}) async {
+  Future<String> addBook(
+    String filePath, {
+    String? remoteCoverUrl,
+    String? downloadUrl,
+  }) async {
     File file = File(filePath);
 
     // If path is relative, resolve it against documents directory
@@ -148,9 +152,15 @@ class BookRepository {
             filePath: filePath,
             author: Value(author),
             coverPath: Value(coverPath),
+            downloadUrl: Value(downloadUrl),
           ),
         );
     return id;
+  }
+
+  Future<List<Book>> getAllBooks() async {
+    final books = await _db.select(_db.books).get();
+    return _resolveBookPaths(books);
   }
 
   Stream<List<Book>> watchAllBooks() {
@@ -307,6 +317,16 @@ class BookRepository {
     );
   }
 
+  Future<void> updateBookFile(String id, String filePath, bool isDownloaded) {
+    return updateBook(
+      id,
+      BooksCompanion(
+        filePath: Value(filePath),
+        isDownloaded: Value(isDownloaded),
+      ),
+    );
+  }
+
   Future<void> updateBookLocation(String id, String location) {
     return updateBook(id, BooksCompanion(group: Value(location)));
   }
@@ -327,10 +347,20 @@ class BookRepository {
       _db.books,
     )..where((t) => t.id.equals(id))).getSingle();
 
-    // 2. Delete local file if it exists and is not an http link (just in case)
-    if (await File(book.filePath).exists()) {
-      await File(book.filePath).delete();
-      print('Offloaded book: Deleted file at ${book.filePath}');
+    // Resolve path if it's relative
+    String fullPath = book.filePath;
+    if (!p.isAbsolute(fullPath)) {
+      final appDir = await getApplicationDocumentsDirectory();
+      fullPath = p.join(appDir.path, fullPath);
+    }
+
+    // 2. Delete local file if it exists
+    final file = File(fullPath);
+    if (await file.exists()) {
+      await file.delete();
+      print('Offloaded book: Deleted file at $fullPath');
+    } else {
+      print('Offloaded book: File not found at $fullPath (already deleted?)');
     }
 
     // 3. Update DB
@@ -338,9 +368,7 @@ class BookRepository {
       id,
       const BooksCompanion(
         group: Value('bookshelf'), // Move to bookshelf
-        status: Value(
-          'not_started',
-        ), // Reset status or keep? 'not_started' seems safe for offloaded
+        // Keep status! Don't reset to 'not_started' so we don't lose reading state.
         isDownloaded: Value(false),
       ),
     );

@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/remote/opds_models.dart';
+import '../data/database.dart'; // for Book
 import '../providers.dart';
-import 'discover_screen.dart'; // For RemoteBookTile
+import 'common/remote_book_tile.dart';
 
 enum SortBy { title, author }
 
@@ -143,6 +144,8 @@ class _StandardEbooksScreenState extends ConsumerState<StandardEbooksScreen>
 
   @override
   Widget build(BuildContext context) {
+    final localBookMap = ref.watch(localBookMapProvider);
+
     // If it's a drill-down view
     if (widget.initialUrl != null) {
       return Scaffold(
@@ -153,7 +156,7 @@ class _StandardEbooksScreenState extends ConsumerState<StandardEbooksScreen>
         body: Column(
           children: [
             _buildSearchBar(),
-            Expanded(child: _buildFeedView(_currentFeed)),
+            Expanded(child: _buildFeedView(_currentFeed, localBookMap)),
           ],
         ),
       );
@@ -179,8 +182,8 @@ class _StandardEbooksScreenState extends ConsumerState<StandardEbooksScreen>
             child: TabBarView(
               controller: _tabController,
               children: [
-                _buildFeedView(_subjectsFeed),
-                _buildFeedView(_authorsFeed),
+                _buildFeedView(_subjectsFeed, localBookMap),
+                _buildFeedView(_authorsFeed, localBookMap),
               ],
             ),
           ),
@@ -248,7 +251,7 @@ class _StandardEbooksScreenState extends ConsumerState<StandardEbooksScreen>
     );
   }
 
-  Widget _buildFeedView(OpdsFeed? feed) {
+  Widget _buildFeedView(OpdsFeed? feed, Map<String, Book>? localBookMap) {
     if (_isLoading && feed == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -346,6 +349,7 @@ class _StandardEbooksScreenState extends ConsumerState<StandardEbooksScreen>
           return RemoteBookTile(
             book: entry.toRemoteBook(),
             isStandardEbook: true,
+            localBookMap: localBookMap,
           );
         }
 

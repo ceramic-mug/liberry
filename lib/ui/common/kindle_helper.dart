@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_email_sender/flutter_email_sender.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'dart:io';
+import 'package:path/path.dart' as p;
 import '../../data/kindle_settings_repository.dart';
+import '../../data/epub_processor.dart';
 
 class KindleHelper {
   final BuildContext context;
@@ -12,6 +15,7 @@ class KindleHelper {
   Future<void> handleSendToKindle({
     required String filePath,
     required String bookTitle,
+    String? coverPath,
   }) async {
     // 1. Get devices locally to avoid async gaps initially
     final repo = ref.read(kindleSettingsRepositoryProvider);
@@ -37,36 +41,67 @@ class KindleHelper {
 
     // Proceed to send
     if (context.mounted) {
-      await _sendToDevice(targetDevice, filePath, bookTitle);
+      await _sendToDevice(
+        targetDevice,
+        filePath,
+        bookTitle,
+        coverPath: coverPath,
+      );
     }
   }
 
   Future<void> _sendToDevice(
     KindleDevice device,
     String filePath,
-    String bookTitle,
-  ) async {
-    final Email sendEmail = Email(
-      body: 'Here is your book: $bookTitle',
-      subject: bookTitle,
-      recipients: [device.email],
-      attachmentPaths: [filePath],
-      isHTML: false,
-    );
+    String bookTitle, {
+    String? coverPath,
+  }) async {
+    File? processedFile;
+    String finalPath = filePath;
+    String finalSubject = bookTitle;
 
     try {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Processing book for Kindle...')),
+        );
+      }
+
+      // Preprocess EPUB
+      if (filePath.toLowerCase().endsWith('.epub')) {
+        processedFile = await EpubProcessor.process(
+          filePath,
+          externalCoverPath: coverPath,
+        );
+        finalPath = processedFile.path;
+        finalSubject = p.basenameWithoutExtension(finalPath);
+      }
+
+      final Email sendEmail = Email(
+        body: 'Here is your book: $bookTitle',
+        subject: finalSubject,
+        recipients: [device.email],
+        attachmentPaths: [finalPath],
+        isHTML: false,
+      );
+
       await FlutterEmailSender.send(sendEmail);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Emailing to ${device.name}...')),
         );
       }
-    } catch (e) {
+    } catch (e, stack) {
+      print('Error processing/sending to Kindle: $e\n$stack');
       if (context.mounted) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Error sending email: $e')));
       }
+    } finally {
+      // Cleanup happens eventually by OS for temp files, but we could do it here if we want to be strict.
+      // However, email sender might need the file for a bit? on Android it copies URI.
+      // Let's leave it for OS cleanup.
     }
   }
 
@@ -113,20 +148,6 @@ class KindleHelper {
                       ),
                     ],
                   ),
-                ),
-              ),
-            ),
-            const Divider(),
-            SimpleDialogOption(
-              onPressed: () {
-                Navigator.pop(context); // Close selection
-                showManageDevicesDialog(); // Open management
-              },
-              child: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 8.0),
-                child: Text(
-                  'Manage Devices...',
-                  style: TextStyle(color: Colors.blueAccent),
                 ),
               ),
             ),
