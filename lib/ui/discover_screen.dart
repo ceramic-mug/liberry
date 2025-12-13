@@ -138,7 +138,15 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       appBar: AppBar(
         title: Row(
           children: [
-            SvgPicture.asset('assets/icon.svg', height: 24),
+            GestureDetector(
+              onTap: () {
+                // Switch to Library tab
+                ref.read(navigationIndexProvider.notifier).setIndex(0);
+                Navigator.of(context).popUntil((route) => route.isFirst);
+              },
+              behavior: HitTestBehavior.opaque,
+              child: SvgPicture.asset('assets/icon.svg', height: 24),
+            ),
             const SizedBox(width: 8),
             const Text('Discover Books'),
           ],

@@ -25,15 +25,23 @@ class LibraryScreen extends ConsumerStatefulWidget {
   ConsumerState<LibraryScreen> createState() => _LibraryScreenState();
 }
 
-class _LibraryScreenState extends ConsumerState<LibraryScreen> {
+class _LibraryScreenState extends ConsumerState<LibraryScreen>
+    with SingleTickerProviderStateMixin {
   String _searchQuery = '';
   bool _isSearching = false;
   SortOption _sortOption = SortOption.dateAdded;
   final TextEditingController _searchController = TextEditingController();
   Set<String> _statusFilters = {};
   final Set<String> _selectedBookIds = {};
+  late TabController _tabController;
 
   bool get _isSelectionMode => _selectedBookIds.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 2, vsync: this);
+  }
 
   void _toggleSelection(Book book) {
     setState(() {
@@ -54,6 +62,7 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
   @override
   void dispose() {
     _searchController.dispose();
+    _tabController.dispose();
     super.dispose();
   }
 
@@ -399,250 +408,260 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         )
         .length;
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          leading: _isSelectionMode
-              ? IconButton(
-                  icon: const Icon(Icons.close),
-                  onPressed: _clearSelection,
-                )
-              : null,
-          title: _isSelectionMode
-              ? Text('${_selectedBookIds.length} selected')
-              : _isSearching
-              ? TextField(
-                  controller: _searchController,
-                  autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Search title, author...',
-                    border: InputBorder.none,
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
-                )
-              : Row(
-                  children: [
-                    SvgPicture.asset('assets/icon.svg', height: 24),
-                    const SizedBox(width: 8),
-                    const Text('Library'),
-                  ],
-                ),
-          centerTitle: false,
-          titleSpacing: _isSelectionMode ? 0 : 16,
-          actions: [
-            if (_isSelectionMode) ...[
-              if (downloadableCount > 0)
-                IconButton(
-                  icon: const Icon(Icons.cloud_download),
-                  tooltip: 'Download Selected',
-                  onPressed: _confirmDownloadSelected,
-                ),
-              IconButton(
-                icon: const Icon(Icons.bookmark_border),
-                tooltip: 'Set Status',
-                onPressed: _showStatusOptions,
-              ),
-              IconButton(
-                icon: const Icon(Icons.swap_horiz),
-                tooltip: 'Move Selected',
-                onPressed: _showMoveOptions,
-              ),
-              IconButton(
-                icon: const Icon(Icons.cloud_off),
-                tooltip: 'Offload',
-                onPressed: _confirmOffloadSelected,
-              ),
-              IconButton(
-                icon: const Icon(Icons.delete),
-                tooltip: 'Delete',
-                onPressed: _confirmDeleteSelected,
-              ),
-            ] else if (_isSearching)
-              IconButton(
+    return Scaffold(
+      appBar: AppBar(
+        leading: _isSelectionMode
+            ? IconButton(
                 icon: const Icon(Icons.close),
-                onPressed: () {
+                onPressed: _clearSelection,
+              )
+            : null,
+        title: _isSelectionMode
+            ? Text('${_selectedBookIds.length} selected')
+            : _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search title, author...',
+                  border: InputBorder.none,
+                ),
+                onChanged: (value) {
                   setState(() {
-                    _isSearching = false;
-                    _searchQuery = '';
-                    _searchController.clear();
+                    _searchQuery = value;
                   });
                 },
               )
-            else ...[
-              IconButton(
-                icon: const Icon(Icons.sync),
-                tooltip: 'Sync Now',
-                onPressed: _performSync,
-              ),
-              // Options Menu (Search, Filter, Sort)
-              PopupMenuButton(
-                // User asked for "Consolidate the search, filter, and sort into one icon that expands into those options"
-                // Let's use 'tune' or 'widgets' or just 'more_horiz'?
-                // "expands into those options".
-                // Let's use 'tune' (sliders style) or 'menu'.
-                // Actually, user said "[Options]... next to a settings (gear)".
-                // Let's use 'tune'.
-                icon: const Icon(Icons.tune),
-                tooltip: 'Options',
-                itemBuilder: (context) => [
-                  PopupMenuItem(
-                    child: ListTile(
-                      leading: const Icon(Icons.search),
-                      title: const Text('Search'),
-                      contentPadding: EdgeInsets.zero,
-                      onTap: () {
-                        Navigator.pop(context);
-                        setState(() {
-                          _isSearching = true;
-                        });
-                      },
-                    ),
+            : Row(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      // Reset to first tab (Desk)
+                      _tabController.animateTo(0);
+                      // Also clear selection if any
+                      _clearSelection();
+                      // And pop if pushed
+                      Navigator.of(context).popUntil((route) => route.isFirst);
+                    },
+                    behavior: HitTestBehavior.opaque,
+                    child: SvgPicture.asset('assets/icon.svg', height: 24),
                   ),
-                  PopupMenuItem(
-                    child: ListTile(
-                      leading: Icon(
-                        Icons.filter_list,
-                        color: _statusFilters.isNotEmpty
-                            ? Theme.of(context).primaryColor
-                            : null,
-                      ),
-                      title: const Text('Filter'),
-                      contentPadding: EdgeInsets.zero,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showFilterDialog();
-                      },
-                    ),
-                  ),
-                  PopupMenuItem(
-                    // Maybe show Sort Dialog?
-                    child: ListTile(
-                      leading: const Icon(Icons.sort),
-                      title: const Text('Sort By...'),
-                      contentPadding: EdgeInsets.zero,
-                      onTap: () {
-                        Navigator.pop(context);
-                        _showSortDialog();
-                      },
-                    ),
-                  ),
+                  const SizedBox(width: 8),
+                  const Text('Library'),
                 ],
               ),
+        centerTitle: false,
+        titleSpacing: _isSelectionMode ? 0 : 16,
+        actions: [
+          if (_isSelectionMode) ...[
+            if (downloadableCount > 0)
               IconButton(
-                icon: const Icon(Icons.settings),
-                tooltip: 'Settings',
-                onPressed: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const SettingsScreen(),
-                    ),
-                  );
-                },
+                icon: const Icon(Icons.cloud_download),
+                tooltip: 'Download Selected',
+                onPressed: _confirmDownloadSelected,
               ),
-            ],
-          ],
-          bottom: _isSearching
-              ? null
-              : const TabBar(
-                  tabs: [
-                    Tab(text: 'Desk'),
-                    Tab(text: 'Bookshelf'),
-                  ],
+            IconButton(
+              icon: const Icon(Icons.bookmark_border),
+              tooltip: 'Set Status',
+              onPressed: _showStatusOptions,
+            ),
+            IconButton(
+              icon: const Icon(Icons.swap_horiz),
+              tooltip: 'Move Selected',
+              onPressed: _showMoveOptions,
+            ),
+            IconButton(
+              icon: const Icon(Icons.cloud_off),
+              tooltip: 'Offload',
+              onPressed: _confirmOffloadSelected,
+            ),
+            IconButton(
+              icon: const Icon(Icons.delete),
+              tooltip: 'Delete',
+              onPressed: _confirmDeleteSelected,
+            ),
+          ] else if (_isSearching)
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                setState(() {
+                  _isSearching = false;
+                  _searchQuery = '';
+                  _searchController.clear();
+                });
+              },
+            )
+          else ...[
+            IconButton(
+              icon: const Icon(Icons.sync),
+              tooltip: 'Sync Now',
+              onPressed: _performSync,
+            ),
+            // Options Menu (Search, Filter, Sort)
+            PopupMenuButton(
+              // User asked for "Consolidate the search, filter, and sort into one icon that expands into those options"
+              // Let's use 'tune' or 'widgets' or just 'more_horiz'?
+              // "expands into those options".
+              // Let's use 'tune' (sliders style) or 'menu'.
+              // Actually, user said "[Options]... next to a settings (gear)".
+              // Let's use 'tune'.
+              icon: const Icon(Icons.tune),
+              tooltip: 'Options',
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  child: ListTile(
+                    leading: const Icon(Icons.search),
+                    title: const Text('Search'),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _isSearching = true;
+                      });
+                    },
+                  ),
                 ),
-        ),
-        body: booksAsyncValue.when(
-          data: (allBooks) {
-            var books = allBooks;
-
-            // 0. Filter by Status (Global)
-            if (_statusFilters.isNotEmpty) {
-              books = books.where((b) {
-                // If filtering by 'read', also check legacy isRead
-                if (_statusFilters.contains('read') &&
-                    (b.status == 'read' || b.isRead)) {
-                  return true;
-                }
-                return _statusFilters.contains(b.status);
-              }).toList();
-            }
-
-            // 1. Search Mode
-            if (_isSearching) {
-              if (_searchQuery.isNotEmpty) {
-                final query = _searchQuery.toLowerCase();
-                books = books.where((b) {
-                  return b.title.toLowerCase().contains(query) ||
-                      (b.author?.toLowerCase().contains(query) ?? false);
-                }).toList();
-                books = _sortBooks(books);
-              }
-
-              if (books.isEmpty) {
-                return const Center(child: Text("No results found."));
-              }
-              return _buildBookGrid(books);
-            }
-
-            // 2. Tab Mode
-            // Split and Sort
-            // Desk: group is 'desk' or legacy 'reading' or null
-            final deskBooks = _sortBooks(
-              books
-                  .where(
-                    (b) =>
-                        b.group == 'desk' ||
-                        b.group == 'reading' ||
-                        b.group == null,
-                  )
-                  .toList(),
-            );
-            // Bookshelf: group is 'bookshelf' or legacy 'read'
-            final bookshelf = _sortBooks(
-              books
-                  .where((b) => b.group == 'bookshelf' || b.group == 'read')
-                  .toList(),
-            );
-
-            // DEBUG: Log book counts and details
-            debugPrint('=== Library Screen Debug ===');
-            debugPrint('Total books: ${books.length}');
-            debugPrint('Desk books: ${deskBooks.length}');
-            debugPrint('Bookshelf books: ${bookshelf.length}');
-            for (final b in deskBooks) {
-              debugPrint(
-                '  Desk: "${b.title}" group=${b.group} isDeleted=${b.isDeleted}',
-              );
-            }
-            debugPrint('============================');
-
-            return TabBarView(
-              key: ValueKey('tabview_${books.length}'),
-              children: [
-                // Desk Tab - Keep as Grid
-                deskBooks.isEmpty
-                    ? _buildEmptyState("No books on your Desk.")
-                    : _buildBookGrid(deskBooks),
-
-                // Bookshelf Tab - Switch to List/Spine view
-                bookshelf.isEmpty
-                    ? _buildEmptyState("Bookshelf is empty.")
-                    : _buildBookList(bookshelf),
+                PopupMenuItem(
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.filter_list,
+                      color: _statusFilters.isNotEmpty
+                          ? Theme.of(context).primaryColor
+                          : null,
+                    ),
+                    title: const Text('Filter'),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showFilterDialog();
+                    },
+                  ),
+                ),
+                PopupMenuItem(
+                  // Maybe show Sort Dialog?
+                  child: ListTile(
+                    leading: const Icon(Icons.sort),
+                    title: const Text('Sort By...'),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showSortDialog();
+                    },
+                  ),
+                ),
               ],
+            ),
+            IconButton(
+              icon: const Icon(Icons.settings),
+              tooltip: 'Settings',
+              onPressed: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const SettingsScreen(),
+                  ),
+                );
+              },
+            ),
+          ],
+        ],
+        bottom: _isSearching
+            ? null
+            : TabBar(
+                controller: _tabController,
+                tabs: [
+                  Tab(text: 'Desk'),
+                  Tab(text: 'Bookshelf'),
+                ],
+              ),
+      ),
+      body: booksAsyncValue.when(
+        data: (allBooks) {
+          var books = allBooks;
+
+          // 0. Filter by Status (Global)
+          if (_statusFilters.isNotEmpty) {
+            books = books.where((b) {
+              // If filtering by 'read', also check legacy isRead
+              if (_statusFilters.contains('read') &&
+                  (b.status == 'read' || b.isRead)) {
+                return true;
+              }
+              return _statusFilters.contains(b.status);
+            }).toList();
+          }
+
+          // 1. Search Mode
+          if (_isSearching) {
+            if (_searchQuery.isNotEmpty) {
+              final query = _searchQuery.toLowerCase();
+              books = books.where((b) {
+                return b.title.toLowerCase().contains(query) ||
+                    (b.author?.toLowerCase().contains(query) ?? false);
+              }).toList();
+              books = _sortBooks(books);
+            }
+
+            if (books.isEmpty) {
+              return const Center(child: Text("No results found."));
+            }
+            return _buildBookGrid(books);
+          }
+
+          // 2. Tab Mode
+          // Split and Sort
+          // Desk: group is 'desk' or legacy 'reading' or null
+          final deskBooks = _sortBooks(
+            books
+                .where(
+                  (b) =>
+                      b.group == 'desk' ||
+                      b.group == 'reading' ||
+                      b.group == null,
+                )
+                .toList(),
+          );
+          // Bookshelf: group is 'bookshelf' or legacy 'read'
+          final bookshelf = _sortBooks(
+            books
+                .where((b) => b.group == 'bookshelf' || b.group == 'read')
+                .toList(),
+          );
+
+          // DEBUG: Log book counts and details
+          debugPrint('=== Library Screen Debug ===');
+          debugPrint('Total books: ${books.length}');
+          debugPrint('Desk books: ${deskBooks.length}');
+          debugPrint('Bookshelf books: ${bookshelf.length}');
+          for (final b in deskBooks) {
+            debugPrint(
+              '  Desk: "${b.title}" group=${b.group} isDeleted=${b.isDeleted}',
             );
-          },
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, s) => Center(child: Text('Error: $e')),
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: widget.onNavigateToDiscover,
-          child: const Icon(Icons.add),
-        ),
+          }
+          debugPrint('============================');
+
+          return TabBarView(
+            controller: _tabController,
+            key: ValueKey('tabview_${books.length}'),
+            children: [
+              // Desk Tab - Keep as Grid
+              deskBooks.isEmpty
+                  ? _buildEmptyState("No books on your Desk.")
+                  : _buildBookGrid(deskBooks),
+
+              // Bookshelf Tab - Switch to List/Spine view
+              bookshelf.isEmpty
+                  ? _buildEmptyState("Bookshelf is empty.")
+                  : _buildBookList(bookshelf),
+            ],
+          );
+        },
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, s) => Center(child: Text('Error: $e')),
+      ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: widget.onNavigateToDiscover,
+        child: const Icon(Icons.add),
       ),
     );
   }
