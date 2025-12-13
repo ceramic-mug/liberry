@@ -214,7 +214,7 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
         verticalScrollBarEnabled: false,
         // Disable native paging, we handle it with JS
         isPagingEnabled: false,
-        disableContextMenu: true,
+        disableContextMenu: false,
         // Ensure content mode fits formatting
         pageZoom: 1.0,
       ),
@@ -456,8 +456,18 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
                     horizontalScrollBarEnabled: false,
                     verticalScrollBarEnabled: false,
                     isPagingEnabled: false,
-                    disableContextMenu: true,
+                    disableContextMenu: false,
                     pageZoom: 1.0,
+                  ),
+                  contextMenu: ContextMenu(
+                    settings: ContextMenuSettings(
+                      hideDefaultSystemContextMenuItems: true,
+                    ),
+                    menuItems: [],
+                    onCreateContextMenu: (hitTestResult) async {
+                      // Prevent showing any custom menu here either, just returns null/void
+                    },
+                    onHideContextMenu: () {},
                   ),
                   onWebViewCreated: (controller) {
                     _webViewController = controller;

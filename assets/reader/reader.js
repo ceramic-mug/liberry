@@ -560,52 +560,105 @@ function setupHorizontalObservers() {
         }, 200);
     });
 
+
+    // Prevent Native Context Menu (Keep selection, but hide the bar so we can show ours)
+    document.addEventListener('contextmenu', function (e) {
+        e.preventDefault();
+    });
+
     // Click
     document.addEventListener('click', function (e) {
         if (inputBlocked) return;
         if (new Date().getTime() - lastHandledTapTime < 500) return;
+        if (window.justClearedSelection) {
+            console.log("Ignored click because selection was just cleared");
+            window.justClearedSelection = false;
+            return;
+        }
         if (isInteractive(e.target)) return;
         handleTap(e.clientX);
     });
 
+
     // Touch Logic
+    var TAP_TOLERANCE = 15;
+    var LONG_PRESS_DELAY = 250;
+    var longPressTimer;
+    var isLongPress = false;
+
     document.addEventListener('touchstart', function (e) {
         if (inputBlocked) return;
         if (e.touches.length !== 1) return;
+
         touchStartX = e.touches[0].clientX;
         touchStartY = e.touches[0].clientY;
         touchStartTime = new Date().getTime();
         startScrollLeft = container.scrollLeft;
         isDragging = true;
         isScrolling = false;
+        isLongPress = false;
+
+        // Long Press Detection for Text Selection
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(function () {
+            // If we haven't moved significantly, assume User wants to Select Text
+            if (isDragging && !isScrolling) {
+                console.log("Long Press detected - Releasing control to Native");
+                isLongPress = true;
+                isDragging = false; // Stop our drag logic
+            }
+        }, LONG_PRESS_DELAY);
+
     }, { passive: false });
 
     document.addEventListener('touchmove', function (e) {
+        // If Long Press is active, let native behavior happen (selection drag)
+        if (isLongPress) return;
+
+        // If a selection exists, also let native behavior happen (refining selection)
         var selection = window.getSelection();
-        if (selection && !selection.isCollapsed) { isDragging = false; return; }
-        if (inputBlocked) { e.preventDefault(); return; }
-        if (interactionLocked) { e.preventDefault(); return; }
+        if (selection && !selection.isCollapsed) {
+            isDragging = false;
+            if (longPressTimer) clearTimeout(longPressTimer);
+            return;
+        }
+
+        if (inputBlocked || interactionLocked) { e.preventDefault(); return; }
         if (!isDragging) return;
+        if (isScrolling) return;
 
         var x = e.touches[0].clientX;
         var y = e.touches[0].clientY;
         var diffX = touchStartX - x;
         var diffY = touchStartY - y;
 
-        if (!isScrolling) {
-            if (Math.abs(diffY) > Math.abs(diffX)) {
-                isScrolling = true;
-                isDragging = false;
-                return;
-            }
+        // Check for threshold before taking action
+        if (Math.abs(diffX) < TAP_TOLERANCE && Math.abs(diffY) < TAP_TOLERANCE) {
+            return; // Too small
         }
-        if (isScrolling) return;
 
+        // Movement detected -> Cancel Long Press Timer
+        if (longPressTimer) clearTimeout(longPressTimer);
+
+        // Significant movement detected. Determine axis.
+        if (Math.abs(diffY) > Math.abs(diffX)) {
+            isScrolling = true; // treat as vertical/other
+            isDragging = false;
+            return;
+        }
+
+        // Horizontal Drag Confirmed
         e.preventDefault();
         container.scrollLeft = startScrollLeft + diffX;
     }, { passive: false });
 
     document.addEventListener('touchend', function (e) {
+        if (longPressTimer) clearTimeout(longPressTimer);
+        if (isLongPress) {
+            isLongPress = false;
+            return; // Native handled it
+        }
+
         if (inputBlocked) { e.preventDefault(); return; }
         if (!isDragging) return;
         isDragging = false;
@@ -614,23 +667,56 @@ function setupHorizontalObservers() {
         var diffX = touchStartX - touchEndX;
         var timeDiff = new Date().getTime() - touchStartTime;
 
-        if (timeDiff < 300 && Math.abs(diffX) < 10 && Math.abs(touchStartY - e.changedTouches[0].clientY) < 10) {
-            if (isInteractive(e.target)) return;
+        // Check for Tap
+        if (timeDiff < 300 && Math.abs(diffX) < TAP_TOLERANCE && Math.abs(touchStartY - e.changedTouches[0].clientY) < TAP_TOLERANCE) {
+            var target = e.target;
+
+            // 0. Check for Active Selection (Unselect tap)
+            var selection = window.getSelection();
+            if (selection && !selection.isCollapsed) {
+                // Tap while selection makes it clear.
+                // We MUST allow default for the browser to clear it.
+                // We ALSO must prevent 'snapToPage' from firing on the subsequent click.
+                console.log("Tap with selection active - allowing default to clear");
+                window.justClearedSelection = true;
+                setTimeout(function () { window.justClearedSelection = false; }, 200);
+                // Do not prevent default.
+                return;
+            }
+
+            // 1. Check for Highlight Tap (Centralized)
+            // Use parentNode loop or closest (with text node safety)
+            var hl = getClosestHighlight(target);
+            if (hl) {
+                e.preventDefault();
+                e.stopPropagation(); // Stop ghost clicks
+                handleHighlightClick(hl);
+                return;
+            }
+
+            // 2. Check for other Interactive Elements
+            if (isInteractive(target)) return; // Let bubble to click
+
+            // 3. Navbar / Zones
             if (interactionLocked) {
-                // Navbar zone check
                 var y = e.changedTouches[0].clientY;
-                if (y < 80 || y > window.innerHeight - 80) return;
+                if (y < 80 || y > window.innerHeight - 80) return; // Navbar click
                 e.preventDefault();
                 lastHandledTapTime = new Date().getTime();
                 if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onTap');
                 return;
             }
+
+            // 4. Page Turn
+            e.preventDefault();
             lastHandledTapTime = new Date().getTime();
             handleTap(touchStartX);
             return;
         }
 
-        if (interactionLocked) return;
+        // Drag End (Snap)
+        if (interactionLocked || isScrolling) return;
+
         var currentW = window.innerWidth;
         var startPage = Math.round(startScrollLeft / currentW);
         var targetPage = startPage;
@@ -643,11 +729,36 @@ function setupHorizontalObservers() {
     setTimeout(reportHorizontalLocation, 300);
 }
 
+function getClosestHighlight(node) {
+    if (!node) return null;
+    if (node.nodeType === 3) node = node.parentNode; // Handle Text Node
+    if (!node || !node.closest) return null;
+    return node.closest('.highlight');
+}
+
+function handleHighlightClick(span) {
+    var id = span.dataset.id;
+    if (!id) return;
+
+    // Prevent immediate clearing by selectionchange
+    window.ignoreSelectionClear = true;
+    setTimeout(function () { window.ignoreSelectionClear = false; }, 500);
+
+    // Report highlight click to Flutter
+    if (window.flutter_inappwebview) {
+        var rect = span.getBoundingClientRect();
+        console.log("JS Highlight Tap: " + id);
+        window.flutter_inappwebview.callHandler('onHighlightClicked',
+            id, rect.left, rect.top, rect.width, rect.height
+        );
+    }
+}
+
 function handleTap(x) {
     var container = document.getElementById('reader-content');
     if (!container) return;
 
-    var w = container.clientWidth; // Use container width (excludes padding)
+    var w = container.clientWidth;
     var p = x / w;
     if (p < 0.2) snapToPage(Math.round(container.scrollLeft / w) - 1);
     else if (p > 0.8) snapToPage(Math.round(container.scrollLeft / w) + 1);
@@ -662,36 +773,25 @@ function snapToPage(pageIndex) {
     var w = container.clientWidth;
     var scrollW = container.scrollWidth;
 
-    // Logic to detect max page
-    // Standard: Math.ceil(scrollW / w) - 1
-    // If we have a tiny overflow (e.g. 1px), ceil pumps it up to a whole new page which is blank.
-    // Let's use a tolerance.
-    // If remainder is small (< 10px), ignore it.
     var remainder = scrollW % w;
     var pages = Math.floor(scrollW / w);
-    if (remainder > 10) { // Tolerance of 10px
+    if (remainder > 10) {
         pages += 1;
     }
     var maxPage = pages - 1;
 
-    console.log("DEBUG: snapToPage request: " + pageIndex + ". Max: " + maxPage + ". W: " + w + " ScrollW: " + scrollW + " CurrScroll: " + container.scrollLeft);
+    console.log("DEBUG: snapToPage request: " + pageIndex + ". Max: " + maxPage);
 
     if (pageIndex < 0) {
         if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onPrevChapter');
         return;
     }
 
-    // Eagerly check if we are 'at the end' or requesting beyond it
     if (pageIndex > maxPage) {
         console.log("DEBUG: Triggering Next Chapter");
         if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onNextChapter');
         return;
     }
-
-    // Also check if the TARGET scroll position is basically at the end
-    // If we are snapping to the last page, and that last page is basically empty?
-    // Hard to know. But we can check if we are *already* at the last page and requesting it again?
-    // No, pageIndex changes.
 
     container.scrollTo({
         left: pageIndex * w,
@@ -767,7 +867,7 @@ function isInteractive(target) {
     if (!target) return false;
     // Fix for Text Nodes which don't have .closest()
     if (target.nodeType === 3) target = target.parentNode;
-    
+
     if (target && target.closest && (
         target.closest('.highlight') ||
         target.closest('a') ||
@@ -826,22 +926,7 @@ function applyHighlight(cfi, id) {
                 var span = document.createElement('span');
                 span.className = 'highlight';
                 span.dataset.id = id;
-                span.onclick = function (e) {
-                    e.stopPropagation();
-
-                    // Prevent immediate clearing by selectionchange
-                    window.ignoreSelectionClear = true;
-                    setTimeout(function () { window.ignoreSelectionClear = false; }, 500);
-
-                    // Report highlight click to Flutter
-                    if (window.flutter_inappwebview) {
-                        var rect = span.getBoundingClientRect();
-                        console.log("JS Highlight Click: " + id + " Rect: " + rect.left + "," + rect.top + " " + rect.width + "x" + rect.height);
-                        window.flutter_inappwebview.callHandler('onHighlightClicked',
-                            id, rect.left, rect.top, rect.width, rect.height
-                        );
-                    }
-                };
+                // No onclick here anymore. Handled centrally in touchend.
                 try { subRange.surroundContents(span); } catch (e) { }
             }
         });

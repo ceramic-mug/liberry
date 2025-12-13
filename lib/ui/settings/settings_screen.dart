@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:liberry/ui/settings/sync_settings_screen.dart';
 import 'package:liberry/providers.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -41,6 +42,20 @@ class SettingsScreen extends ConsumerWidget {
             title: const Text('App Theme'),
             subtitle: Text(_getThemeName(currentTheme)),
             onTap: () => _showThemeDialog(context, ref, currentTheme),
+          ),
+          const Divider(),
+          ListTile(
+            leading: const Icon(Icons.bug_report),
+            title: const Text('Share feedback or bugs'),
+            subtitle: const Text('Help us improve the app'),
+            onTap: () async {
+              final url = Uri.parse(
+                'https://docs.google.com/forms/d/e/1FAIpQLScl20QI4tSgw5xjN8x93k7lUyuyeGP7UnrGhw3GJEAZg8SZmA/viewform?usp=publish-editor',
+              );
+              if (await canLaunchUrl(url)) {
+                await launchUrl(url, mode: LaunchMode.externalApplication);
+              }
+            },
           ),
           const Divider(),
           const ListTile(

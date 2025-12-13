@@ -199,6 +199,7 @@ h6,
 li,
 blockquote,
 a {
+  -webkit-touch-callout: default !important;
   -webkit-user-select: text !important;
   user-select: text !important;
   cursor: text;
