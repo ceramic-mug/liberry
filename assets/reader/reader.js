@@ -765,9 +765,13 @@ function reportSelection() {
 
 function isInteractive(target) {
     if (!target) return false;
-    if (target.closest('.highlight') ||
+    // Fix for Text Nodes which don't have .closest()
+    if (target.nodeType === 3) target = target.parentNode;
+    
+    if (target && target.closest && (
+        target.closest('.highlight') ||
         target.closest('a') ||
-        target.closest('button')) return true;
+        target.closest('button'))) return true;
     return false;
 }
 
