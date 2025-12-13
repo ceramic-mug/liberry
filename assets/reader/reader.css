@@ -100,8 +100,8 @@ body.mode-horizontal #reader-content {
 
   /* CSS Columns */
   /* Remove column-width 100vw, let it fill available space */
-  /* column-width: 100vw; */
-  column-gap: 0;
+  column-width: 100vw;
+  column-gap: calc(var(--side-margin, 20px) * 2);
   column-fill: auto;
 
   margin: 0;
