@@ -142,8 +142,8 @@ body.mode-horizontal div {
     column-count: 2;
     /* Gap = Left Padding + Right Padding is REQUIRED for 100vw pagination to align */
     /* User requested 'gap = setting'. So we must set Inner Padding = Setting / 2 */
-    padding-left: calc(var(--side-margin, 20px) / 2);
-    padding-right: calc(var(--side-margin, 20px) / 2);
+    padding-left: var(--side-margin, 20px);
+    padding-right: var(--side-margin, 20px);
 
     column-gap: var(--side-margin, 20px);
     column-fill: auto;
