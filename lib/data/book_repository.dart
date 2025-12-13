@@ -408,6 +408,12 @@ class BookRepository {
     return results;
   }
 
+  Future<Quote?> getHighlight(String id) async {
+    return (_db.select(_db.quotes)
+          ..where((t) => t.id.equals(id) & t.isDeleted.equals(false)))
+        .getSingleOrNull();
+  }
+
   Future<void> updateHighlightCharacter(String quoteId, String? characterId) {
     return (_db.update(_db.quotes)..where((t) => t.id.equals(quoteId))).write(
       QuotesCompanion(

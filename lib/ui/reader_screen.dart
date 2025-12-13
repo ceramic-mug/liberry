@@ -18,6 +18,7 @@ import 'package:epubx/epubx.dart' as epub;
 import 'package:liberry/ui/reader/reader_drawer.dart';
 import 'package:liberry/ui/reader/reader_navigation_bar.dart';
 import 'package:liberry/ui/reader/reader_top_bar.dart';
+import 'package:liberry/ui/widgets/highlight_details_sheet.dart';
 
 class ReaderScreen extends ConsumerStatefulWidget {
   final Book book;
@@ -552,26 +553,52 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
 
                     controller.addJavaScriptHandler(
                       handlerName: 'onHighlightClicked',
-                      callback: (args) {
+                      callback: (args) async {
                         if (args.length >= 5) {
                           final String id = args[0].toString();
-                          final double left = (args[1] as num).toDouble();
-                          final double top = (args[2] as num).toDouble();
-                          final double width = (args[3] as num).toDouble();
-                          final double height = (args[4] as num).toDouble();
-                          print(
-                            "Flutter Highlight Click: $id Rect: $left,$top $width x $height",
-                          );
-                          setState(() {
-                            _activeHighlightId = id;
-                            _selectionRect = Rect.fromLTWH(
-                              left,
-                              top,
-                              width,
-                              height,
+
+                          // Fetch Highlight
+                          final highlight = await ref
+                              .read(bookRepositoryProvider)
+                              .getHighlight(id);
+
+                          if (highlight != null && mounted) {
+                            showModalBottomSheet(
+                              context: context,
+                              isScrollControlled: true,
+                              shape: const RoundedRectangleBorder(
+                                borderRadius: BorderRadius.vertical(
+                                  top: Radius.circular(20),
+                                ),
+                              ),
+                              builder: (context) => HighlightDetailsSheet(
+                                highlight: highlight,
+                                book: widget.book,
+                                showGoToPage: false,
+                                onHighlightDeleted: () {
+                                  // Remove from WebView DOM to avoid reload
+                                  _webViewController?.evaluateJavascript(
+                                    source:
+                                        """
+                                      var spans = document.querySelectorAll('span.highlight[data-id="$id"]');
+                                      spans.forEach(function(span) {
+                                          var parent = span.parentNode;
+                                          while (span.firstChild) parent.insertBefore(span.firstChild, span);
+                                          parent.removeChild(span);
+                                      });
+                                    """,
+                                  );
+                                },
+                              ),
                             );
+                          }
+
+                          // Clear selection rects if any
+                          setState(() {
+                            _selectionRect = null;
                             _selectedText = null;
                             _selectedCfi = null;
+                            _activeHighlightId = null;
                           });
                         }
                       },

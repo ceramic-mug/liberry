@@ -81,9 +81,10 @@ class CharacterRepository {
   }
 
   Stream<List<Quote>> watchQuotesForCharacter(String characterId) {
-    return (_db.select(
-      _db.quotes,
-    )..where((t) => t.characterId.equals(characterId))).watch();
+    return (_db.select(_db.quotes)..where(
+          (t) => t.characterId.equals(characterId) & t.isDeleted.equals(false),
+        ))
+        .watch();
   }
 
   Stream<List<QuoteWithBook>> watchAllQuotesWithBooks(
@@ -100,8 +101,9 @@ class CharacterRepository {
 
     // Apply filters
     joinedQuery.where(
-      _db.quotes.textContent.lower().contains(queryLower) |
-          _db.books.title.lower().contains(queryLower),
+      (_db.quotes.textContent.lower().contains(queryLower) |
+              _db.books.title.lower().contains(queryLower)) &
+          _db.quotes.isDeleted.equals(false),
     );
 
     if (bookId != null) {

@@ -685,16 +685,16 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
           );
 
           // DEBUG: Log book counts and details
-          debugPrint('=== Library Screen Debug ===');
-          debugPrint('Total books: ${books.length}');
-          debugPrint('Desk books: ${deskBooks.length}');
-          debugPrint('Bookshelf books: ${bookshelf.length}');
-          for (final b in deskBooks) {
-            debugPrint(
-              '  Desk: "${b.title}" group=${b.group} isDeleted=${b.isDeleted}',
-            );
-          }
-          debugPrint('============================');
+          // debugPrint('=== Library Screen Debug ===');
+          // debugPrint('Total books: ${books.length}');
+          // debugPrint('Desk books: ${deskBooks.length}');
+          // debugPrint('Bookshelf books: ${bookshelf.length}');
+          // for (final b in deskBooks) {
+          //   debugPrint(
+          //     '  Desk: "${b.title}" group=${b.group} isDeleted=${b.isDeleted}',
+          //   );
+          // }
+          // debugPrint('============================');
 
           return TabBarView(
             controller: _tabController,
