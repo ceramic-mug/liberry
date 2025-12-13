@@ -161,19 +161,27 @@ class BookRepository {
   }
 
   Future<List<Book>> getAllBooks() async {
-    final books = await _db.select(_db.books).get();
+    final books = await (_db.select(
+      _db.books,
+    )..where((t) => t.isDeleted.equals(false))).get();
     return _resolveBookPaths(books);
   }
 
   Stream<List<Book>> watchAllBooks() {
-    return _db.select(_db.books).watch().asyncMap((books) async {
+    return (_db.select(
+      _db.books,
+    )..where((t) => t.isDeleted.equals(false))).watch().asyncMap((books) async {
       return await _resolveBookPaths(books);
     });
   }
 
   Future<bool> isBookDownloaded(String title) async {
     final query = _db.select(_db.books)
-      ..where((tbl) => tbl.title.lower().equals(title.toLowerCase()));
+      ..where(
+        (tbl) =>
+            tbl.title.lower().equals(title.toLowerCase()) &
+            tbl.isDeleted.equals(false),
+      );
     final result = await query.getSingleOrNull();
     return result != null;
   }
@@ -181,7 +189,7 @@ class BookRepository {
   Future<Book?> getBook(String id) async {
     final books = await (_db.select(
       _db.books,
-    )..where((t) => t.id.equals(id))).get();
+    )..where((t) => t.id.equals(id) & t.isDeleted.equals(false))).get();
     if (books.isEmpty) return null;
     return (await _resolveBookPaths(books)).first;
   }
@@ -248,7 +256,7 @@ class BookRepository {
   }
 
   Future<void> deleteBook(String id) async {
-    // 1. Fetch book to get file paths
+    // 1. Fetch book to get file paths (for optional file cleanup)
     final book = await getBook(id);
     if (book != null) {
       final appDir = await getApplicationDocumentsDirectory();
@@ -286,13 +294,28 @@ class BookRepository {
       }
     }
 
-    // 4. Delete Database records
-    await (_db.delete(_db.books)..where((t) => t.id.equals(id))).go();
-    await (_db.delete(
+    // 4. Soft Delete: Update isDeleted = true and updatedAt = now
+    final now = DateTime.now();
+
+    await (_db.update(_db.books)..where((t) => t.id.equals(id))).write(
+      BooksCompanion(isDeleted: Value(true), updatedAt: Value(now)),
+    );
+
+    // Recursively soft-delete related data?
+    // SyncService typically syncs these tables independently, so we should probably soft-delete them too.
+    await (_db.update(
       _db.readingProgress,
-    )..where((t) => t.bookId.equals(id))).go();
-    await (_db.delete(_db.quotes)..where((t) => t.bookId.equals(id))).go();
-    await (_db.delete(_db.bookNotes)..where((t) => t.bookId.equals(id))).go();
+    )..where((t) => t.bookId.equals(id))).write(
+      ReadingProgressCompanion(isDeleted: Value(true), updatedAt: Value(now)),
+    );
+
+    await (_db.update(_db.quotes)..where((t) => t.bookId.equals(id))).write(
+      QuotesCompanion(isDeleted: Value(true), updatedAt: Value(now)),
+    );
+
+    await (_db.update(_db.bookNotes)..where((t) => t.bookId.equals(id))).write(
+      BookNotesCompanion(isDeleted: Value(true), updatedAt: Value(now)),
+    );
   }
 
   Future<String> addHighlight(String bookId, String text, String cfi) async {
@@ -316,16 +339,16 @@ class BookRepository {
   }
 
   Stream<List<Quote>> watchHighlightsForBook(String bookId) {
-    return (_db.select(
-      _db.quotes,
-    )..where((t) => t.bookId.equals(bookId))).watch();
+    return (_db.select(_db.quotes)
+          ..where((t) => t.bookId.equals(bookId) & t.isDeleted.equals(false)))
+        .watch();
   }
 
   Future<List<Quote>> getHighlights(String bookId) async {
     print("BookRepository: Fetching highlights for book $bookId");
     final results = await (_db.select(
       _db.quotes,
-    )..where((t) => t.bookId.equals(bookId))).get();
+    )..where((t) => t.bookId.equals(bookId) & t.isDeleted.equals(false))).get();
     print("BookRepository: Found ${results.length} highlights");
     return results;
   }
@@ -344,7 +367,9 @@ class BookRepository {
       updateHighlightCharacter(quoteId, characterId);
 
   Future<void> deleteHighlight(String id) {
-    return (_db.delete(_db.quotes)..where((t) => t.id.equals(id))).go();
+    return (_db.update(_db.quotes)..where((t) => t.id.equals(id))).write(
+      QuotesCompanion(isDeleted: Value(true), updatedAt: Value(DateTime.now())),
+    );
   }
 
   Future<void> updateBook(String id, BooksCompanion companion) {
@@ -430,22 +455,29 @@ class BookRepository {
     final bookResults =
         await (_db.select(_db.books)..where(
               (t) =>
-                  t.title.lower().contains(lowerQuery) |
-                  t.author.lower().contains(lowerQuery),
+                  (t.title.lower().contains(lowerQuery) |
+                      t.author.lower().contains(lowerQuery)) &
+                  t.isDeleted.equals(false),
             ))
             .get();
 
     // 2. Search Highlights
-    final quoteResults = await (_db.select(
-      _db.quotes,
-    )..where((t) => t.textContent.lower().contains(lowerQuery))).get();
+    final quoteResults =
+        await (_db.select(_db.quotes)..where(
+              (t) =>
+                  t.textContent.lower().contains(lowerQuery) &
+                  t.isDeleted.equals(false),
+            ))
+            .get();
 
     final bookIdsFromQuotes = quoteResults.map((q) => q.bookId).toSet();
 
     // Combine
-    final additionalBooks = await (_db.select(
-      _db.books,
-    )..where((t) => t.id.isIn(bookIdsFromQuotes))).get();
+    final additionalBooks =
+        await (_db.select(_db.books)..where(
+              (t) => t.id.isIn(bookIdsFromQuotes) & t.isDeleted.equals(false),
+            ))
+            .get();
 
     final allBooks = {...bookResults, ...additionalBooks}.toList();
 
@@ -456,7 +488,7 @@ class BookRepository {
   // Note Management
   Stream<List<BookNote>> watchNotesForBook(String bookId) {
     return (_db.select(_db.bookNotes)
-          ..where((t) => t.bookId.equals(bookId))
+          ..where((t) => t.bookId.equals(bookId) & t.isDeleted.equals(false))
           ..orderBy([
             (t) =>
                 OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
@@ -465,9 +497,12 @@ class BookRepository {
   }
 
   Stream<List<BookNote>> watchAllNotes() {
-    return (_db.select(_db.bookNotes)..orderBy([
-          (t) => OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
-        ]))
+    return (_db.select(_db.bookNotes)
+          ..where((t) => t.isDeleted.equals(false))
+          ..orderBy([
+            (t) =>
+                OrderingTerm(expression: t.createdAt, mode: OrderingMode.desc),
+          ]))
         .watch();
   }
 
@@ -490,7 +525,12 @@ class BookRepository {
       addBookNote(bookId, content);
 
   Future<void> deleteNote(String noteId) {
-    return (_db.delete(_db.bookNotes)..where((t) => t.id.equals(noteId))).go();
+    return (_db.update(_db.bookNotes)..where((t) => t.id.equals(noteId))).write(
+      BookNotesCompanion(
+        isDeleted: Value(true),
+        updatedAt: Value(DateTime.now()),
+      ),
+    );
   }
 
   Future<void> updateNote(String noteId, String content) {

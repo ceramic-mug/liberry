@@ -833,6 +833,52 @@ class BookCollectionsData {
         ),
       ],
     ),
+    // Collection: Romance
+    BookCollection(
+      title: 'Timeless Romance',
+      subtitle: 'Classic Tales of Love & Passion',
+      icon: Icons.favorite,
+      color: Colors.pink,
+      groupingLabel: null,
+      books: [
+        CollectionBook(
+          title: 'Pride and Prejudice',
+          author: 'Jane Austen',
+          source: 'SE',
+          metadata: {'Focus': 'Social Class, Marriage'},
+        ),
+        CollectionBook(
+          title: 'Sense and Sensibility',
+          author: 'Jane Austen',
+          source: 'SE',
+          metadata: {'Focus': 'Emotion vs. Reason'},
+        ),
+        CollectionBook(
+          title: 'Jane Eyre',
+          author: 'Charlotte Brontë',
+          source: 'SE',
+          metadata: {'Focus': 'Gothic, Independence'},
+        ),
+        CollectionBook(
+          title: 'Wuthering Heights',
+          author: 'Emily Brontë',
+          source: 'SE',
+          metadata: {'Focus': 'Gothic, Passion, Revenge'},
+        ),
+        CollectionBook(
+          title: 'Romeo and Juliet',
+          author: 'William Shakespeare',
+          source: 'SE',
+          metadata: {'Focus': 'Tragedy, Forbidden Love'},
+        ),
+        CollectionBook(
+          title: 'A Room with a View',
+          author: 'E. M. Forster',
+          source: 'SE',
+          metadata: {'Focus': 'Society, Repression'},
+        ),
+      ],
+    ),
   ];
 
   // Standalone collection for the Home/Discover screen

@@ -59,8 +59,8 @@ class HighlightsTab extends ConsumerWidget {
             return InkWell(
               onTap: () => _showHighlightDetails(context, ref, item),
               child: Container(
-                margin: const EdgeInsets.only(bottom: 16),
-                padding: const EdgeInsets.all(16),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: Theme.of(context).cardColor,
                   borderRadius: BorderRadius.circular(12),

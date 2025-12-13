@@ -18,8 +18,11 @@ class NotesScreen extends ConsumerStatefulWidget {
 class _NotesScreenState extends ConsumerState<NotesScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
+  // Feature: Filter by Book or Author
+  // Unlike Library (Status), Notes filters are dynamic (Book ID / Author Name).
   String? _selectedBookId;
   String? _selectedAuthor;
 
@@ -38,114 +41,108 @@ class _NotesScreenState extends ConsumerState<NotesScreen>
 
   @override
   Widget build(BuildContext context) {
-    final bookRepo = ref.watch(bookRepositoryProvider);
-
     return Scaffold(
       appBar: AppBar(
-        title: Row(
-          children: [
-            SvgPicture.asset('assets/icon.svg', height: 24),
-            const SizedBox(width: 8),
-            const Text('Notes'),
-          ],
-        ),
-        bottom: TabBar(
-          controller: _tabController,
-          tabs: const [
-            Tab(text: 'Highlights'),
-            Tab(text: 'Characters'),
-            Tab(text: 'Journal'),
-          ],
-        ),
-      ),
-      body: Column(
-        children: [
-          // Search and Filter Bar
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              children: [
-                TextField(
-                  controller: _searchController,
-                  decoration: InputDecoration(
-                    hintText: 'Search...',
-                    filled: true,
-                    prefixIcon: const Icon(Icons.search),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(30),
-                      borderSide: BorderSide.none,
-                    ),
-                    suffixIcon: _searchQuery.isNotEmpty
-                        ? IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () {
-                              setState(() {
-                                _searchController.clear();
-                                _searchQuery = '';
-                              });
-                            },
-                          )
-                        : null,
-                  ),
-                  onChanged: (value) {
-                    setState(() {
-                      _searchQuery = value;
-                    });
-                  },
+        leading: _isSearching
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                onPressed: () {
+                  setState(() {
+                    _isSearching = false;
+                    _searchQuery = '';
+                    _searchController.clear();
+                  });
+                },
+              )
+            : null,
+        title: _isSearching
+            ? TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: const InputDecoration(
+                  hintText: 'Search notes...',
+                  border: InputBorder.none,
                 ),
-                const SizedBox(height: 12),
-                StreamBuilder<List<Book>>(
-                  stream: bookRepo.watchAllBooks(),
-                  builder: (context, snapshot) {
-                    if (!snapshot.hasData) return const SizedBox.shrink();
-                    final books = snapshot.data!;
-                    final authors = books
-                        .map((b) => b.author)
-                        .where((a) => a != null)
-                        .toSet() // Unique
-                        .cast<String>()
-                        .toList();
-                    authors.sort();
-
-                    return SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          // Book Filter
-                          _buildFilterChip<String>(
-                            label: 'Book',
-                            value: _selectedBookId,
-                            items: books,
-                            itemLabel: (b) => b.title,
-                            itemValue: (b) => b.id,
-                            onChanged: (val) {
-                              setState(() {
-                                _selectedBookId = val;
-                              });
-                            },
-                          ),
-                          const SizedBox(width: 8),
-                          // Author Filter
-                          _buildFilterChip<String>(
-                            label: 'Author',
-                            value: _selectedAuthor,
-                            items: authors,
-                            itemLabel: (a) => a,
-                            itemValue: (a) => a,
-                            onChanged: (val) {
-                              setState(() {
-                                _selectedAuthor = val;
-                              });
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  },
+                onChanged: (value) {
+                  setState(() {
+                    _searchQuery = value;
+                  });
+                },
+              )
+            : Row(
+                children: [
+                  SvgPicture.asset('assets/icon.svg', height: 24),
+                  const SizedBox(width: 8),
+                  const Text('Notes'),
+                ],
+              ),
+        centerTitle: false,
+        titleSpacing: _isSearching ? 0 : 16,
+        actions: [
+          if (_isSearching)
+            IconButton(
+              icon: const Icon(Icons.close),
+              onPressed: () {
+                setState(() {
+                  _isSearching = false;
+                  _searchQuery = '';
+                  _searchController.clear();
+                });
+              },
+            )
+          else ...[
+            PopupMenuButton(
+              icon: const Icon(Icons.tune),
+              tooltip: 'Options',
+              itemBuilder: (context) => [
+                PopupMenuItem(
+                  child: ListTile(
+                    leading: const Icon(Icons.search),
+                    title: const Text('Search'),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _isSearching = true;
+                      });
+                    },
+                  ),
+                ),
+                PopupMenuItem(
+                  child: ListTile(
+                    leading: Icon(
+                      Icons.filter_list,
+                      color:
+                          (_selectedBookId != null || _selectedAuthor != null)
+                          ? Theme.of(context).primaryColor
+                          : null,
+                    ),
+                    title: const Text('Filter'),
+                    contentPadding: EdgeInsets.zero,
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showFilterDialog();
+                    },
+                  ),
                 ),
               ],
             ),
-          ),
+          ],
+        ],
+        bottom: _isSearching
+            ? null
+            : TabBar(
+                controller: _tabController,
+                tabs: const [
+                  Tab(text: 'Highlights'),
+                  Tab(text: 'Characters'),
+                  Tab(text: 'Journal'),
+                ],
+              ),
+      ),
+      body: Column(
+        children: [
+          // Search and Filter Bar removed (moved to AppBar)
           Expanded(
             child: TabBarView(
               controller: _tabController,
@@ -173,73 +170,126 @@ class _NotesScreenState extends ConsumerState<NotesScreen>
     );
   }
 
-  Widget _buildFilterChip<T>({
-    required String label,
-    required T? value,
-    required List<dynamic> items,
-    required String Function(dynamic) itemLabel,
-    required T Function(dynamic) itemValue,
-    required ValueChanged<T?> onChanged,
-  }) {
-    // If a value is selected, show a FilterChip that can be cleared
-    if (value != null) {
-      // Find the label for the selected value
-      String displayLabel = label;
-      try {
-        final selectedItem = items.firstWhere(
-          (i) => itemValue(i) == value,
-          orElse: () => null,
-        );
-        if (selectedItem != null) {
-          displayLabel = itemLabel(selectedItem);
-        }
-      } catch (e) {
-        // ignore
-      }
-
-      return FilterChip(
-        label: Text(
-          displayLabel,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        selected: true,
-        onSelected: (bool selected) {
-          if (!selected) onChanged(null); // Clear filter
-        },
-        onDeleted: () => onChanged(null),
-      );
-    }
-
-    // Otherwise show an ActionChip that opens a selector
-    return ActionChip(
-      avatar: const Icon(Icons.filter_list, size: 16),
-      label: Text(label),
-      onPressed: () async {
-        final result = await showModalBottomSheet<T>(
-          context: context,
-          builder: (context) => ListView.builder(
-            itemCount: items.length + 1,
-            itemBuilder: (context, index) {
-              if (index == 0) {
-                return ListTile(
-                  title: Text(
-                    'All ${label}s',
-                    style: const TextStyle(fontWeight: FontWeight.bold),
+  void _showFilterDialog() {
+    final bookRepo = ref.read(bookRepositoryProvider);
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.5,
+              minChildSize: 0.3,
+              maxChildSize: 0.9,
+              builder: (context, scrollController) => Column(
+                children: [
+                  AppBar(
+                    title: const Text('Filter Notes'),
+                    leading: const CloseButton(),
+                    actions: [
+                      TextButton(
+                        onPressed: () {
+                          // Clear filters
+                          setState(() {
+                            _selectedBookId = null;
+                            _selectedAuthor = null;
+                          });
+                          setModalState(() {}); // Refresh modal UI
+                        },
+                        child: const Text('Clear All'),
+                      ),
+                    ],
                   ),
-                  onTap: () => Navigator.pop(context, null),
-                );
-              }
-              final item = items[index - 1];
-              return ListTile(
-                title: Text(itemLabel(item)),
-                onTap: () => Navigator.pop(context, itemValue(item)),
-              );
-            },
-          ),
+                  Expanded(
+                    child: StreamBuilder<List<Book>>(
+                      stream: bookRepo.watchAllBooks(),
+                      builder: (context, snapshot) {
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+                        final books = snapshot.data!;
+                        final authors = books
+                            .map((b) => b.author)
+                            .where((a) => a != null)
+                            .toSet()
+                            .cast<String>()
+                            .toList();
+                        authors.sort();
+
+                        return ListView(
+                          controller: scrollController,
+                          padding: const EdgeInsets.all(16),
+                          children: [
+                            const Text(
+                              'By Book',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: books.map((book) {
+                                final isSelected = _selectedBookId == book.id;
+                                return FilterChip(
+                                  label: Text(book.title),
+                                  selected: isSelected,
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      _selectedBookId = selected
+                                          ? book.id
+                                          : null;
+                                    });
+                                    setModalState(() {});
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 24),
+                            const Text(
+                              'By Author',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: authors.map((author) {
+                                final isSelected = _selectedAuthor == author;
+                                return FilterChip(
+                                  label: Text(author),
+                                  selected: isSelected,
+                                  onSelected: (selected) {
+                                    setState(() {
+                                      _selectedAuthor = selected
+                                          ? author
+                                          : null;
+                                    });
+                                    setModalState(() {});
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
         );
-        if (result != null) {
-          onChanged(result);
-        }
       },
     );
   }
@@ -317,9 +367,9 @@ class JournalTab extends ConsumerWidget {
                 final isLinked = note.quoteId != null;
 
                 return Card(
-                  margin: const EdgeInsets.only(bottom: 12),
+                  margin: const EdgeInsets.only(bottom: 8),
                   child: Padding(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.all(12),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -394,14 +444,15 @@ class JournalTab extends ConsumerWidget {
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
+                        // Small spacing
+                        const SizedBox(height: 0),
                         Text(
                           note.content,
                           style: const TextStyle(fontSize: 15),
                           maxLines: 4,
                           overflow: TextOverflow.ellipsis,
                         ),
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 4),
                         Align(
                           alignment: Alignment.bottomRight,
                           child: Text(

@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'sync_settings_screen.dart';
+import 'package:liberry/ui/settings/sync_settings_screen.dart';
+import 'package:liberry/providers.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final currentTheme = ref.watch(themeModeProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
@@ -25,7 +28,20 @@ class SettingsScreen extends ConsumerWidget {
               );
             },
           ),
-          // Future settings (Reader Theme, About, etc.) can go here
+          const Divider(),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 16, 16, 8),
+            child: Text(
+              'Appearance',
+              style: TextStyle(color: Colors.grey, fontWeight: FontWeight.bold),
+            ),
+          ),
+          ListTile(
+            leading: const Icon(Icons.brightness_6),
+            title: const Text('App Theme'),
+            subtitle: Text(_getThemeName(currentTheme)),
+            onTap: () => _showThemeDialog(context, ref, currentTheme),
+          ),
           const Divider(),
           const ListTile(
             leading: Icon(Icons.info_outline),
@@ -34,6 +50,67 @@ class SettingsScreen extends ConsumerWidget {
           ),
         ],
       ),
+    );
+  }
+
+  String _getThemeName(ThemeMode mode) {
+    switch (mode) {
+      case ThemeMode.system:
+        return 'System Default';
+      case ThemeMode.light:
+        return 'Light';
+      case ThemeMode.dark:
+        return 'Dark';
+    }
+  }
+
+  Future<void> _showThemeDialog(
+    BuildContext context,
+    WidgetRef ref,
+    ThemeMode currentMode,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return SimpleDialog(
+          title: const Text('Select Theme'),
+          children: <Widget>[
+            RadioListTile<ThemeMode>(
+              title: const Text('System Default'),
+              value: ThemeMode.system,
+              groupValue: currentMode,
+              onChanged: (ThemeMode? value) {
+                if (value != null) {
+                  ref.read(themeModeProvider.notifier).setThemeMode(value);
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            RadioListTile<ThemeMode>(
+              title: const Text('Light'),
+              value: ThemeMode.light,
+              groupValue: currentMode,
+              onChanged: (ThemeMode? value) {
+                if (value != null) {
+                  ref.read(themeModeProvider.notifier).setThemeMode(value);
+                  Navigator.pop(context);
+                }
+              },
+            ),
+            RadioListTile<ThemeMode>(
+              title: const Text('Dark'),
+              value: ThemeMode.dark,
+              groupValue: currentMode,
+              onChanged: (ThemeMode? value) {
+                if (value != null) {
+                  ref.read(themeModeProvider.notifier).setThemeMode(value);
+                  Navigator.pop(context);
+                }
+              },
+            ),
+          ],
+        );
+      },
     );
   }
 }

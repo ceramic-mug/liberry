@@ -240,273 +240,149 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
         // Top 100 Challenge Button
-        Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 0,
-          color: Theme.of(
+        // Top 100 Challenge Button
+        _buildDiscoveryCard(
+          title: BookCollectionsData.top100.title,
+          subtitle: BookCollectionsData.top100.subtitle,
+          icon: BookCollectionsData.top100.icon,
+          accentColor: Theme.of(context).colorScheme.tertiary,
+          lightBackgroundColor: Theme.of(
             context,
           ).colorScheme.tertiaryContainer.withValues(alpha: 0.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => CollectionDetailsScreen(
-                    collection: BookCollectionsData.top100,
-                    onSearch: _searchCollectionBook,
-                  ),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => CollectionDetailsScreen(
+                  collection: BookCollectionsData.top100,
+                  onSearch: _searchCollectionBook,
                 ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Icon(
-                    BookCollectionsData.top100.icon,
-                    size: 28,
-                    color: Theme.of(context).colorScheme.tertiary,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          BookCollectionsData.top100.title,
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        Text(
-                          BookCollectionsData.top100.subtitle,
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ],
               ),
-            ),
-          ),
+            );
+          },
         ),
 
         // Collections Button
-        Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 0,
-          color: Theme.of(
+        _buildDiscoveryCard(
+          title: 'Collections',
+          subtitle: 'Curated lists & series',
+          icon: Icons.collections_bookmark_outlined,
+          accentColor: Theme.of(context).colorScheme.primary,
+          lightBackgroundColor: Theme.of(
             context,
           ).colorScheme.secondaryContainer.withValues(alpha: 0.4),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) =>
-                      CollectionsScreen(onSearch: _searchCollectionBook),
-                ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.collections_bookmark_outlined,
-                    size: 28,
-                    color: Theme.of(context).colorScheme.primary,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Collections',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        Text(
-                          'Curated lists & series',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ],
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) =>
+                    CollectionsScreen(onSearch: _searchCollectionBook),
               ),
-            ),
-          ),
+            );
+          },
         ),
 
         // Standard Ebooks Button
-        Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 0,
-          color: Colors.blue.shade50.withValues(alpha: 0.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const StandardEbooksScreen(),
-                ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.book_outlined,
-                    size: 28,
-                    color: Colors.blue.shade800,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Standard Ebooks',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        Text(
-                          'Browse the collection',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ],
+        _buildDiscoveryCard(
+          title: 'Standard Ebooks',
+          subtitle: 'Browse the collection',
+          icon: Icons.book_outlined,
+          accentColor: Colors.blue.shade800,
+          lightBackgroundColor: Colors.blue.shade50.withValues(alpha: 0.5),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const StandardEbooksScreen(),
               ),
-            ),
-          ),
+            );
+          },
         ),
 
         // Project Gutenberg Button
-        Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 0,
-          color: Colors.orange.shade50.withValues(alpha: 0.5),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-          child: InkWell(
-            borderRadius: BorderRadius.circular(12),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const OfflineGutenbergScreen(),
-                ),
-              );
-            },
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.library_books_outlined,
-                    size: 28,
-                    color: Colors.orange.shade800,
-                  ),
-                  const SizedBox(width: 16),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Project Gutenberg',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: Theme.of(context).colorScheme.onSurface,
-                          ),
-                        ),
-                        Text(
-                          '60,000+ free ebooks',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withValues(alpha: 0.7),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Icon(
-                    Icons.arrow_forward_ios,
-                    size: 16,
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withValues(alpha: 0.5),
-                  ),
-                ],
+        _buildDiscoveryCard(
+          title: 'Project Gutenberg',
+          subtitle: '60,000+ free ebooks',
+          icon: Icons.library_books_outlined,
+          accentColor: Colors.orange.shade800,
+          lightBackgroundColor: Colors.orange.shade50.withValues(alpha: 0.5),
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => const OfflineGutenbergScreen(),
               ),
-            ),
-          ),
+            );
+          },
         ),
       ],
+    );
+  }
+
+  Widget _buildDiscoveryCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color accentColor,
+    required Color lightBackgroundColor,
+    required VoidCallback onTap,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 0,
+      color: isDark ? Colors.transparent : lightBackgroundColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isDark
+            ? BorderSide(color: accentColor, width: 2)
+            : BorderSide.none,
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Row(
+            children: [
+              Icon(icon, size: 28, color: accentColor),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withValues(alpha: 0.7),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.arrow_forward_ios,
+                size: 16,
+                color: Theme.of(
+                  context,
+                ).colorScheme.onSurface.withValues(alpha: 0.5),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

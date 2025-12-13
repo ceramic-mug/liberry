@@ -56,8 +56,13 @@ class CollectionsScreen extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
-                  color: collection.color.withOpacity(0.1),
+                  color: Theme.of(context).brightness == Brightness.dark
+                      ? Colors.transparent
+                      : collection.color.withOpacity(0.1),
                   shape: BoxShape.circle,
+                  border: Theme.of(context).brightness == Brightness.dark
+                      ? Border.all(color: collection.color, width: 2)
+                      : null,
                 ),
                 child: Icon(collection.icon, size: 32, color: collection.color),
               ),

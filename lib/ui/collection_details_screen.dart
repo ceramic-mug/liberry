@@ -472,23 +472,40 @@ class _CollectionBookTile extends ConsumerWidget {
 
     final subtitle = subtitleParts.join(' • ');
 
-    Color cardColor;
+    Color baseColor;
     if (isRead) {
-      cardColor = Colors.green.withOpacity(0.15);
+      baseColor = Colors.green;
     } else if (isReading) {
-      cardColor = Colors.blue.withOpacity(0.15);
+      baseColor = Colors.blue;
     } else if (isInLibrary) {
       // Not Started
-      cardColor = Colors.grey.withOpacity(0.15);
+      baseColor = Colors.grey;
     } else {
-      cardColor = Theme.of(
-        context,
-      ).colorScheme.surfaceContainerHighest.withOpacity(0.3);
+      baseColor = Theme.of(context).colorScheme.onSurfaceVariant;
     }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(
       elevation: 0,
-      color: cardColor,
+      color: isDark
+          ? Colors.transparent
+          : (isInLibrary
+                ? baseColor.withValues(alpha: 0.15)
+                : Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest.withValues(alpha: 0.3)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isDark
+            ? BorderSide(
+                color: isInLibrary
+                    ? baseColor
+                    : baseColor.withValues(alpha: 0.3), // Subtler for unowned
+                width: 2,
+              )
+            : BorderSide.none,
+      ),
       margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
       child: ListTile(
         title: Text(

@@ -443,6 +443,11 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                   onPressed: _confirmDownloadSelected,
                 ),
               IconButton(
+                icon: const Icon(Icons.bookmark_border),
+                tooltip: 'Set Status',
+                onPressed: _showStatusOptions,
+              ),
+              IconButton(
                 icon: const Icon(Icons.swap_horiz),
                 tooltip: 'Move Selected',
                 onPressed: _showMoveOptions,
@@ -515,8 +520,6 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
                     ),
                   ),
                   PopupMenuItem(
-                    enabled:
-                        false, // This is just a header for sub-menu? No, PopupMenu doesn't support nested easily.
                     // Maybe show Sort Dialog?
                     child: ListTile(
                       leading: const Icon(Icons.sort),
@@ -739,6 +742,59 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen> {
         );
       },
     );
+  }
+
+  void _showStatusOptions() {
+    showModalBottomSheet(
+      context: context,
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.cancel_outlined),
+                title: const Text('Not Started'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _updateSelectedBooksStatus('not_started');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.menu_book),
+                title: const Text('Reading'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _updateSelectedBooksStatus('reading');
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.check_circle),
+                title: const Text('Read'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _updateSelectedBooksStatus('read');
+                },
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<void> _updateSelectedBooksStatus(String status) async {
+    final bookRepo = ref.read(bookRepositoryProvider);
+    final count = _selectedBookIds.length;
+    for (final id in _selectedBookIds) {
+      await bookRepo.updateBookStatus(id, status);
+    }
+    _clearSelection();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Updated status for $count books.')),
+      );
+    }
   }
 
   Future<void> _moveSelectedBooks(String group) async {

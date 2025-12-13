@@ -62,25 +62,43 @@ class RemoteBookTile extends StatelessWidget {
       imageWidget = _buildPlaceholder();
     }
 
-    Color cardColor;
+    Color baseColor;
     if (isRead) {
-      cardColor = Colors.green.withOpacity(0.15);
+      baseColor = Colors.green;
     } else if (isReading) {
-      cardColor = Colors.blue.withOpacity(0.15);
+      baseColor = Colors.blue;
     } else if (isDownloaded) {
-      // Not Started
-      cardColor = Colors.grey.withOpacity(0.15);
+      // Not Started but downloaded
+      baseColor = Colors.grey;
     } else {
-      cardColor = Theme.of(
-        context,
-      ).colorScheme.surfaceContainerHighest.withOpacity(0.3);
+      // Not downloaded
+      baseColor = Theme.of(context).colorScheme.onSurfaceVariant;
     }
+
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
       clipBehavior: Clip.antiAlias,
-      color: cardColor,
+      color: isDark
+          ? Colors.transparent
+          : (isDownloaded
+                ? baseColor.withOpacity(0.15)
+                : Theme.of(
+                    context,
+                  ).colorScheme.surfaceContainerHighest.withOpacity(0.3)),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: isDark
+            ? BorderSide(
+                color: isDownloaded
+                    ? baseColor
+                    : baseColor.withOpacity(0.3), // Subtler for unowned
+                width: 2,
+              )
+            : BorderSide.none,
+      ),
       child: InkWell(
         onTap: () {
           if (isDownloaded) {

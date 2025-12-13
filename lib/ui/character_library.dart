@@ -50,6 +50,7 @@ class CharactersTab extends ConsumerWidget {
               final item = data[index];
               final character = item.character;
               return ListTile(
+                dense: true,
                 title: Text(character.name),
                 subtitle: Text(
                   '${item.book.title}\n${character.bio ?? 'No bio'}',

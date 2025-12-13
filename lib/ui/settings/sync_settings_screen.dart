@@ -19,11 +19,11 @@ class SyncSettingsScreen extends ConsumerStatefulWidget {
 
 class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   static const String _prefSyncPath = 'sync_file_path';
-  static const String _prefAutoSync = 'auto_sync_enabled';
+
   static const String _prefLastSync = 'last_sync_time';
 
   String? _syncFilePath;
-  bool _autoSync = false;
+
   DateTime? _lastSyncTime;
   bool _isLoading = false;
 
@@ -37,7 +37,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final prefs = ref.read(sharedPreferencesProvider);
     setState(() {
       _syncFilePath = prefs.getString(_prefSyncPath);
-      _autoSync = prefs.getBool(_prefAutoSync) ?? false;
+
       final lastSyncStr = prefs.getString(_prefLastSync);
       _lastSyncTime = lastSyncStr != null
           ? DateTime.tryParse(lastSyncStr)
@@ -292,14 +292,6 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     }
   }
 
-  Future<void> _toggleAutoSync(bool value) async {
-    final prefs = ref.read(sharedPreferencesProvider);
-    await prefs.setBool(_prefAutoSync, value);
-    setState(() {
-      _autoSync = value;
-    });
-  }
-
   void _showHelpDialog() {
     showDialog(
       context: context,
@@ -377,9 +369,13 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
           ListTile(
             title: const Text('Select Sync File'),
             subtitle: Text(
-              _syncFilePath ?? 'Select file to sync or restore from',
+              _syncFilePath != null
+                  ? 'Sync file is set'
+                  : 'Select file to sync or restore from',
             ),
-            trailing: const Icon(Icons.folder_open),
+            trailing: _syncFilePath != null
+                ? const Icon(Icons.check, color: Colors.green)
+                : const Icon(Icons.folder_open),
             onTap: _selectSyncFile,
           ),
           ListTile(
@@ -388,13 +384,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
             trailing: const Icon(Icons.add),
             onTap: _createSyncFile,
           ),
-          const Divider(),
-          SwitchListTile(
-            title: const Text('Auto-Sync'),
-            subtitle: const Text('Sync on app start and close (if possible)'),
-            value: _autoSync,
-            onChanged: _toggleAutoSync,
-          ),
+
           const Divider(),
           const SizedBox(height: 24),
           if (_isLoading)
@@ -442,8 +432,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                       SizedBox(height: 8),
                       Text(
                         '1. Select a file in your iCloud Drive, Google Drive, or Dropbox folder using the picker above.\n'
-                        '2. This "Sync File" acts as a bridge. The app reads changes from it and writes your local changes to it.\n'
-                        '3. Enable "Auto-Sync" to keep everything up to date automatically.',
+                        '2. This "Sync File" acts as a bridge. The app reads changes from it and writes your local changes to it.',
                         style: TextStyle(fontSize: 13),
                       ),
                     ],

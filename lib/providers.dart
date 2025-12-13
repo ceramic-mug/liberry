@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
@@ -114,3 +115,41 @@ final localBookMapProvider = Provider<Map<String, Book>>((ref) {
     orElse: () => {},
   );
 });
+
+class ThemeModeNotifier extends Notifier<ThemeMode> {
+  @override
+  ThemeMode build() {
+    // Load from SharedPreferences
+    final prefs = ref.watch(sharedPreferencesProvider);
+    final themeString = prefs.getString('theme_mode');
+    if (themeString == 'light') {
+      return ThemeMode.light;
+    } else if (themeString == 'dark') {
+      return ThemeMode.dark;
+    } else {
+      return ThemeMode.system;
+    }
+  }
+
+  Future<void> setThemeMode(ThemeMode mode) async {
+    state = mode;
+    final prefs = ref.read(sharedPreferencesProvider);
+    String themeString;
+    switch (mode) {
+      case ThemeMode.light:
+        themeString = 'light';
+        break;
+      case ThemeMode.dark:
+        themeString = 'dark';
+        break;
+      case ThemeMode.system:
+        themeString = 'system';
+        break;
+    }
+    await prefs.setString('theme_mode', themeString);
+  }
+}
+
+final themeModeProvider = NotifierProvider<ThemeModeNotifier, ThemeMode>(
+  ThemeModeNotifier.new,
+);

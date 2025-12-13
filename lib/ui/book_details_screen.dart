@@ -447,7 +447,7 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                       value: 'offload',
                       child: Row(
                         children: [
-                          Icon(Icons.cloud_upload_outlined, color: Colors.blue),
+                          Icon(Icons.cloud_off, color: Colors.blue),
                           SizedBox(width: 8),
                           Text('Offload Book'),
                         ],
