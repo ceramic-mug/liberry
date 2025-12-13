@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import '../data/database.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/remote/remote_book.dart';
-import '../data/local/author_data.dart';
 import '../providers.dart';
 import 'common/remote_book_tile.dart';
 import 'author_books_screen.dart';
@@ -18,14 +17,17 @@ class OfflineGutenbergScreen extends ConsumerStatefulWidget {
 class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
-  final TextEditingController _searchController = TextEditingController();
+  final TextEditingController _globalSearchController = TextEditingController();
 
   // Tab 1: Random
   List<RemoteBook> _randomBooks = [];
   bool _isLoadingRandom = true;
 
   // Tab 3: Authors
-  String? _selectedLetter;
+  List<String> _allAuthors = [];
+  List<String> _filteredAuthors = [];
+  final TextEditingController _authorFilterController = TextEditingController();
+  bool _isLoadingAuthors = true;
 
   // Search
   bool _isSearching = false;
@@ -39,13 +41,45 @@ class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
     // 2 Tabs: Random, Authors
     _tabController = TabController(length: 2, vsync: this);
     _loadRandomBooks();
+    _loadAuthors();
   }
 
   @override
   void dispose() {
     _tabController.dispose();
-    _searchController.dispose();
+    _globalSearchController.dispose();
+    _authorFilterController.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadAuthors() async {
+    setState(() => _isLoadingAuthors = true);
+    try {
+      final service = ref.read(offlineGutenbergServiceProvider);
+      final authors = await service.getAllAuthors();
+      if (mounted) {
+        setState(() {
+          _allAuthors = authors;
+          _filteredAuthors = authors;
+          _isLoadingAuthors = false;
+        });
+      }
+    } catch (e) {
+      print("Error loading authors: $e");
+      if (mounted) setState(() => _isLoadingAuthors = false);
+    }
+  }
+
+  void _filterAuthors(String query) {
+    setState(() {
+      if (query.isEmpty) {
+        _filteredAuthors = _allAuthors;
+      } else {
+        _filteredAuthors = _allAuthors
+            .where((a) => a.toLowerCase().contains(query.toLowerCase()))
+            .toList();
+      }
+    });
   }
 
   Future<void> _loadRandomBooks() async {
@@ -123,16 +157,6 @@ class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
     }).toList();
   }
 
-  // Author Filtering
-  List<String> _getFilteredAuthors() {
-    if (_selectedLetter == null) {
-      return AuthorData.authors;
-    }
-    return AuthorData.authors
-        .where((author) => author.toUpperCase().startsWith(_selectedLetter!))
-        .toList();
-  }
-
   @override
   Widget build(BuildContext context) {
     final localBookMap = ref.watch(localBookMapProvider);
@@ -141,7 +165,7 @@ class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
       appBar: AppBar(
         title: _isSearching
             ? TextField(
-                controller: _searchController,
+                controller: _globalSearchController,
                 autofocus: true,
                 decoration: InputDecoration(
                   hintText: 'Search...',
@@ -157,7 +181,7 @@ class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
             IconButton(
               icon: const Icon(Icons.close),
               onPressed: () {
-                _searchController.clear();
+                _globalSearchController.clear();
                 _performSearch('');
               },
             )
@@ -235,28 +259,52 @@ class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
   }
 
   Widget _buildAuthorsTab() {
+    if (_isLoadingAuthors) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
     return Column(
       children: [
-        // A-Z Filter
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-          child: Row(
-            children: [
-              _buildFilterChip('All', _selectedLetter == null),
-              ...List.generate(26, (index) {
-                final letter = String.fromCharCode(65 + index);
-                return _buildFilterChip(letter, _selectedLetter == letter);
-              }),
-            ],
+        // Filter Bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+          child: TextField(
+            controller: _authorFilterController,
+            decoration: InputDecoration(
+              hintText: 'Filter authors...',
+              prefixIcon: const Icon(Icons.filter_list),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              filled: true,
+              fillColor: Theme.of(
+                context,
+              ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 16,
+                vertical: 0,
+              ),
+              suffixIcon: _authorFilterController.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear),
+                      onPressed: () {
+                        setState(() {
+                          _authorFilterController.clear();
+                          _filterAuthors('');
+                        });
+                      },
+                    )
+                  : null,
+            ),
+            onChanged: _filterAuthors,
           ),
         ),
         Expanded(
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
-            itemCount: _getFilteredAuthors().length,
+            itemCount: _filteredAuthors.length,
             itemBuilder: (context, index) {
-              final author = _getFilteredAuthors()[index];
+              final author = _filteredAuthors[index];
               return Card(
                 elevation: 0,
                 color: Theme.of(
@@ -280,21 +328,6 @@ class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
           ),
         ),
       ],
-    );
-  }
-
-  Widget _buildFilterChip(String label, bool isSelected) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8.0),
-      child: FilterChip(
-        label: Text(label),
-        selected: isSelected,
-        onSelected: (selected) {
-          setState(() {
-            _selectedLetter = label == 'All' ? null : label;
-          });
-        },
-      ),
     );
   }
 }

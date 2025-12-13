@@ -128,4 +128,21 @@ class OfflineGutenbergService {
       return [];
     }
   }
+
+  Future<List<String>> getAllAuthors() async {
+    try {
+      final db = await database;
+      final results = await db.rawQuery(
+        'SELECT DISTINCT author FROM books WHERE author IS NOT NULL ORDER BY author ASC',
+      );
+
+      return results
+          .map((row) => row['author'] as String)
+          .where((author) => author.trim().isNotEmpty)
+          .toList();
+    } catch (e) {
+      print("Error fetching authors: $e");
+      return [];
+    }
+  }
 }

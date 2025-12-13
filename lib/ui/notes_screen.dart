@@ -7,6 +7,7 @@ import '../providers.dart';
 import 'highlights_screen.dart'; // Will refactor to HighlightsTab
 import 'character_library.dart'; // Will refactor to CharactersTab
 import 'widgets/link_note_dialog.dart';
+import 'widgets/export_notes_dialog.dart';
 
 class NotesScreen extends ConsumerStatefulWidget {
   const NotesScreen({super.key});
@@ -99,6 +100,16 @@ class _NotesScreenState extends ConsumerState<NotesScreen>
               },
             )
           else ...[
+            IconButton(
+              icon: const Icon(Icons.share),
+              tooltip: 'Export Notes',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => const ExportNotesDialog(),
+                );
+              },
+            ),
             PopupMenuButton(
               icon: const Icon(Icons.tune),
               tooltip: 'Options',
