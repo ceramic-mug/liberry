@@ -41,6 +41,10 @@ class MyApp extends ConsumerWidget {
       ),
       themeMode: themeMode,
       home: const SplashScreen(),
+      builder: (context, child) => GestureDetector(
+        onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+        child: child,
+      ),
     );
   }
 }
