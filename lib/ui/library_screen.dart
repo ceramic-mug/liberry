@@ -454,31 +454,87 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         titleSpacing: _isSelectionMode ? 0 : 16,
         actions: [
           if (_isSelectionMode) ...[
-            if (downloadableCount > 0)
-              IconButton(
-                icon: const Icon(Icons.cloud_download),
-                tooltip: 'Download Selected',
-                onPressed: _confirmDownloadSelected,
-              ),
-            IconButton(
-              icon: const Icon(Icons.bookmark_border),
-              tooltip: 'Set Status',
-              onPressed: _showStatusOptions,
-            ),
-            IconButton(
-              icon: const Icon(Icons.swap_horiz),
-              tooltip: 'Move Selected',
-              onPressed: _showMoveOptions,
-            ),
-            IconButton(
-              icon: const Icon(Icons.cloud_off),
-              tooltip: 'Offload',
-              onPressed: _confirmOffloadSelected,
-            ),
-            IconButton(
-              icon: const Icon(Icons.delete),
-              tooltip: 'Delete',
-              onPressed: _confirmDeleteSelected,
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_horiz),
+              tooltip: 'Selection Options',
+              onSelected: (value) {
+                switch (value) {
+                  case 'finish_store':
+                    _confirmFinishAndStoreSelected();
+                    break;
+                  case 'download':
+                    _confirmDownloadSelected();
+                    break;
+                  case 'status':
+                    _showStatusOptions();
+                    break;
+                  case 'move':
+                    _showMoveOptions();
+                    break;
+                  case 'offload':
+                    _confirmOffloadSelected();
+                    break;
+                  case 'delete':
+                    _confirmDeleteSelected();
+                    break;
+                }
+              },
+              itemBuilder: (context) {
+                return [
+                  if (downloadableCount > 0)
+                    const PopupMenuItem(
+                      value: 'download',
+                      child: ListTile(
+                        leading: Icon(Icons.cloud_download),
+                        title: Text('Download'),
+                        contentPadding: EdgeInsets.zero,
+                      ),
+                    ),
+                  const PopupMenuItem(
+                    value: 'finish_store',
+                    child: ListTile(
+                      leading: Icon(Icons.inventory_2_outlined),
+                      title: Text('Finish and Store'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'status',
+                    child: ListTile(
+                      leading: Icon(Icons.bookmark_border),
+                      title: Text('Set Status'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'move',
+                    child: ListTile(
+                      leading: Icon(Icons.swap_horiz),
+                      title: Text('Move Selected'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'offload',
+                    child: ListTile(
+                      leading: Icon(Icons.cloud_off),
+                      title: Text('Offload'),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: 'delete',
+                    child: ListTile(
+                      leading: Icon(Icons.delete, color: Colors.red),
+                      title: Text(
+                        'Delete',
+                        style: TextStyle(color: Colors.red),
+                      ),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                ];
+              },
             ),
           ] else if (_isSearching)
             IconButton(
@@ -934,6 +990,47 @@ class _LibraryScreenState extends ConsumerState<LibraryScreen>
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text('Offloaded $count books.')));
+      }
+    }
+  }
+
+  Future<void> _confirmFinishAndStoreSelected() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Finish and Store Selected?'),
+        content: Text(
+          'This will mark ${_selectedBookIds.length} books as "Read", move them to the Bookshelf, and remove their downloads to save space.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Finish and Store'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true) {
+      final bookRepo = ref.read(bookRepositoryProvider);
+      final count = _selectedBookIds.length;
+      for (final id in _selectedBookIds) {
+        // 1. Mark as Read
+        await bookRepo.updateBookStatus(id, 'read');
+        // 2. Move to Bookshelf
+        await bookRepo.setBookGroup(id, 'bookshelf');
+        // 3. Offload (delete file)
+        await bookRepo.offloadBook(id);
+      }
+      _clearSelection();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Finished and stored $count books.')),
+        );
       }
     }
   }

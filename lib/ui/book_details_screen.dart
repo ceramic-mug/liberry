@@ -204,6 +204,54 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
     );
   }
 
+  void _confirmFinishAndStore(BuildContext context, Book book) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Finish and Store?'),
+        content: const Text(
+          'This will mark the book as "Read", move it to your Bookshelf, and offload the file to save space.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context); // Close dialog
+
+              // 1. Update Status
+              // We need to use existing methods or direct repo calls.
+              // _updateStatus calls repo.updateBookStatus
+              ref
+                  .read(bookRepositoryProvider)
+                  .updateBookStatus(book.id, 'read');
+
+              // 2. Update Location
+              ref
+                  .read(bookRepositoryProvider)
+                  .setBookGroup(book.id, 'bookshelf');
+
+              // 3. Offload
+              // Also might need to pop details screen?
+              // The user might want to stay on details screen to see it updated.
+              // Offload removes the file so "Read" button will change to "Download".
+              await ref.read(bookRepositoryProvider).offloadBook(book.id);
+
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Book finished and stored.')),
+                );
+              }
+            },
+            child: const Text('Finish and Store'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _showAddCharacterDialog(String bookId) async {
     final nameController = TextEditingController();
     await showDialog(
@@ -429,9 +477,21 @@ class _BookDetailsScreenState extends ConsumerState<BookDetailsScreen> {
                     _showLocationSelector(book);
                   } else if (value == 'offload') {
                     _confirmOffload(context, book);
+                  } else if (value == 'finish_store') {
+                    _confirmFinishAndStore(context, book);
                   }
                 },
                 itemBuilder: (BuildContext context) => [
+                  const PopupMenuItem(
+                    value: 'finish_store',
+                    child: Row(
+                      children: [
+                        Icon(Icons.inventory_2_outlined, color: Colors.green),
+                        SizedBox(width: 8),
+                        Text('Finish and Store'),
+                      ],
+                    ),
+                  ),
                   const PopupMenuItem(
                     value: 'location',
                     child: Row(
