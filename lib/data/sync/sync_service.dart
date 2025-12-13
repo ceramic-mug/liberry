@@ -12,18 +12,124 @@ import 'package:path/path.dart' as p;
 import 'package:liberry/data/remote/remote_book.dart';
 import 'package:uuid/uuid.dart';
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
+
+import 'package:liberry/utils/ios_file_utils.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 final syncServiceProvider = Provider((ref) {
   final db = ref.watch(databaseProvider);
   final dio = ref.read(dioProvider);
-  return SyncService(db, dio);
+  return SyncService(db, dio, ref);
 });
 
 class SyncService {
+  static const String prefAutoSync = 'auto_sync_enabled';
+  static const String _prefSyncPath = 'sync_file_path';
+  static const String _prefLastSync = 'last_sync_time';
+
   final AppDatabase _db;
   final Dio _dio;
+  final Ref _ref;
 
-  SyncService(this._db, this._dio);
+  SyncService(this._db, this._dio, this._ref);
+
+  /// Performs the full sync process: Import -> Export -> Cloud Commit.
+  /// Handles both iOS (Coordinated Access) and other platforms (Direct IO).
+  Future<void> performSync(SharedPreferences prefs) async {
+    final syncFilePath = prefs.getString(_prefSyncPath);
+
+    if (syncFilePath == null) {
+      // No sync file configured, nothing to do.
+      return;
+    }
+
+    String? tempFilePath;
+    String? bookmark;
+
+    try {
+      File syncFile;
+
+      // iOS: Use coordinated file access
+      if (Platform.isIOS) {
+        bookmark = prefs.getString('sync_file_bookmark_ios');
+        if (bookmark == null) {
+          throw Exception(
+            'No bookmark stored. Please re-select the sync file in settings.',
+          );
+        }
+
+        debugPrint('iOS: Preparing coordinated read...');
+        tempFilePath = await IosFileUtils.prepareSyncRead(bookmark);
+
+        if (tempFilePath == null) {
+          throw Exception('Failed to prepare sync file for reading.');
+        }
+        debugPrint('iOS: Using temp file at: $tempFilePath');
+        syncFile = File(tempFilePath);
+      } else {
+        // Non-iOS: Direct file access
+        syncFile = File(syncFilePath);
+      }
+
+      // Import merge first
+      debugPrint('Starting Import...');
+      await importFromSyncFile(syncFile);
+      debugPrint('Import Finished.');
+
+      // Then Export snapshot
+      debugPrint('Starting Export...');
+      await exportToSyncFile(syncFile);
+      debugPrint('Export Finished.');
+
+      // iOS: Commit changes back to cloud
+      if (Platform.isIOS && bookmark != null && tempFilePath != null) {
+        debugPrint('iOS: Committing coordinated write...');
+        final success = await IosFileUtils.commitSyncWrite(
+          bookmarkBase64: bookmark,
+          tempPath: tempFilePath,
+        );
+        if (!success) {
+          throw Exception('Failed to write sync file back to cloud.');
+        }
+        debugPrint('iOS: Successfully wrote to cloud.');
+      }
+
+      final now = DateTime.now();
+      await prefs.setString(_prefLastSync, now.toIso8601String());
+    } finally {
+      // iOS: Cleanup
+      if (Platform.isIOS) {
+        if (tempFilePath != null) {
+          await IosFileUtils.cleanupSync(tempFilePath);
+        }
+        await IosFileUtils.stopAccess();
+        debugPrint('iOS: Cleanup complete.');
+      }
+
+      // Force refresh the books provider to update UI after sync
+      _ref.invalidate(allBooksProvider);
+    }
+  }
+
+  Future<void> performSyncWithRetry(
+    SharedPreferences prefs, {
+    int maxRetries = 3,
+  }) async {
+    for (int i = 0; i < maxRetries; i++) {
+      try {
+        await performSync(prefs);
+        return;
+      } catch (e) {
+        debugPrint('Sync attempt ${i + 1} failed: $e');
+        if (i < maxRetries - 1) {
+          await Future.delayed(const Duration(seconds: 2));
+        } else {
+          rethrow;
+        }
+      }
+    }
+  }
 
   Future<void> exportToSyncFile(File file) async {
     // SAFE SYNC EXPORT:

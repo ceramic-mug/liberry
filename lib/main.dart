@@ -5,6 +5,8 @@ import 'ui/discover_screen.dart';
 import 'ui/notes_screen.dart';
 import 'ui/splash_screen.dart';
 import 'ui/library_screen.dart';
+import 'dart:async';
+import 'package:liberry/data/sync/sync_service.dart';
 import 'providers.dart';
 
 void main() async {
@@ -58,6 +60,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   late final List<Widget> _widgetOptions;
+  Timer? _periodicSyncTimer;
 
   late final AppLifecycleListener _listener;
 
@@ -71,16 +74,84 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ];
 
     _listener = AppLifecycleListener(onStateChange: _onStateChanged);
+
+    // Initialize Auto Sync
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _setupAutoSync();
+    });
+  }
+
+  Future<void> _setupAutoSync() async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    final enabled = prefs.getBool(SyncService.prefAutoSync) ?? false;
+
+    // Always start periodic timer, check enabled status inside.
+    // This handles if user enables it later (though we might want to restart timer then).
+    // Better: if enabled, start timer. If not, ensure stopped.
+    // For simplicity, we just check inside the timer.
+    _periodicSyncTimer?.cancel();
+    _periodicSyncTimer = Timer.periodic(const Duration(minutes: 5), (_) {
+      final currentEnabled = prefs.getBool(SyncService.prefAutoSync) ?? false;
+      if (currentEnabled) {
+        _performSilentSync(prefs);
+      }
+    });
+
+    if (enabled) {
+      await _performInitialSync(prefs);
+    }
+  }
+
+  Future<void> _performInitialSync(SharedPreferences prefs) async {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Syncing...'),
+        duration: Duration(seconds: 1),
+      ),
+    );
+
+    try {
+      await ref.read(syncServiceProvider).performSyncWithRetry(prefs);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Sync complete'),
+            duration: Duration(seconds: 2),
+            showCloseIcon: true,
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('Initial sync failed after retries: $e');
+      // Optional: Show error
+    }
+  }
+
+  Future<void> _performSilentSync(SharedPreferences prefs) async {
+    try {
+      await ref.read(syncServiceProvider).performSync(prefs);
+    } catch (e) {
+      debugPrint('Silent sync failed: $e');
+    }
   }
 
   @override
   void dispose() {
+    _periodicSyncTimer?.cancel();
     _listener.dispose();
     super.dispose();
   }
 
   void _onStateChanged(AppLifecycleState state) {
-    // Handle specific state changes if needed
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.detached) {
+      final prefs = ref.read(sharedPreferencesProvider);
+      final enabled = prefs.getBool(SyncService.prefAutoSync) ?? false;
+      if (enabled) {
+        _performSilentSync(prefs);
+      }
+    }
   }
 
   void _updateIndex(int index) {

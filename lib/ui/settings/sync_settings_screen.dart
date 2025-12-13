@@ -23,6 +23,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
   static const String _prefLastSync = 'last_sync_time';
 
   String? _syncFilePath;
+  bool _autoSyncEnabled = false;
 
   DateTime? _lastSyncTime;
   bool _isLoading = false;
@@ -37,6 +38,7 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     final prefs = ref.read(sharedPreferencesProvider);
     setState(() {
       _syncFilePath = prefs.getString(_prefSyncPath);
+      _autoSyncEnabled = prefs.getBool(SyncService.prefAutoSync) ?? false;
 
       final lastSyncStr = prefs.getString(_prefLastSync);
       _lastSyncTime = lastSyncStr != null
@@ -174,6 +176,19 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     });
   }
 
+  Future<void> _toggleAutoSync(bool value) async {
+    final prefs = ref.read(sharedPreferencesProvider);
+    await prefs.setBool(SyncService.prefAutoSync, value);
+    setState(() {
+      _autoSyncEnabled = value;
+    });
+
+    if (value && _syncFilePath != null) {
+      // Trigger a sync immediately when enabled
+      _performSync();
+    }
+  }
+
   Future<void> _performSync() async {
     if (_syncFilePath == null) return;
 
@@ -181,76 +196,11 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
       _isLoading = true;
     });
 
-    String? tempFilePath;
-    String? bookmark;
-
     try {
-      File syncFile;
       final prefs = ref.read(sharedPreferencesProvider);
-
-      // iOS: Use coordinated file access
-      if (Platform.isIOS) {
-        bookmark = prefs.getString('sync_file_bookmark_ios');
-        if (bookmark == null) {
-          throw Exception(
-            'No bookmark stored. Please re-select the sync file.',
-          );
-        }
-
-        debugPrint('iOS: Preparing coordinated read...');
-        try {
-          tempFilePath = await IosFileUtils.prepareSyncRead(bookmark);
-        } on PlatformException catch (e) {
-          if (e.code == 'BOOKMARK_STALE') {
-            if (mounted) {
-              ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text(
-                    'Sync file access lost. Please re-select the file.',
-                  ),
-                ),
-              );
-            }
-            return;
-          }
-          rethrow;
-        }
-
-        if (tempFilePath == null) {
-          throw Exception('Failed to prepare sync file for reading.');
-        }
-        debugPrint('iOS: Using temp file at: $tempFilePath');
-        syncFile = File(tempFilePath);
-      } else {
-        // Non-iOS: Direct file access
-        syncFile = File(_syncFilePath!);
-      }
-
       final syncService = ref.read(syncServiceProvider);
 
-      // Import merge first
-      debugPrint('Starting Import...');
-      await syncService.importFromSyncFile(syncFile);
-      debugPrint('Import Finished.');
-
-      // Then Export snapshot
-      debugPrint('Starting Export...');
-      await syncService.exportToSyncFile(syncFile);
-      debugPrint('Export Finished.');
-
-      // iOS: Commit changes back to cloud
-      if (Platform.isIOS && bookmark != null && tempFilePath != null) {
-        debugPrint('iOS: Committing coordinated write...');
-        final success = await IosFileUtils.commitSyncWrite(
-          bookmarkBase64: bookmark,
-          tempPath: tempFilePath,
-        );
-        if (!success) {
-          throw Exception('Failed to write sync file back to cloud.');
-        }
-        debugPrint('iOS: Successfully wrote to cloud.');
-      }
+      await syncService.performSync(prefs);
 
       final now = DateTime.now();
       await prefs.setString(_prefLastSync, now.toIso8601String());
@@ -267,23 +217,21 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
     } catch (e) {
       debugPrint('Sync Exception: $e');
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+        if (e is PlatformException && e.code == 'BOOKMARK_STALE') {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Sync file access lost. Please re-select the file.',
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(SnackBar(content: Text('Sync failed: $e')));
+        }
       }
     } finally {
-      // iOS: Cleanup
-      if (Platform.isIOS) {
-        if (tempFilePath != null) {
-          await IosFileUtils.cleanupSync(tempFilePath);
-        }
-        await IosFileUtils.stopAccess();
-        debugPrint('iOS: Cleanup complete.');
-      }
-
-      // Force refresh the books provider to update UI after sync
-      ref.invalidate(allBooksProvider);
-
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -398,6 +346,12 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                 padding: const EdgeInsets.symmetric(vertical: 16),
               ),
             ),
+          SwitchListTile(
+            title: const Text('Automatic Sync'),
+            subtitle: const Text('Sync on open, close, and periodically'),
+            value: _autoSyncEnabled,
+            onChanged: _toggleAutoSync,
+          ),
           if (_lastSyncTime != null)
             Padding(
               padding: const EdgeInsets.only(top: 16.0),
@@ -427,12 +381,9 @@ class _SyncSettingsScreenState extends ConsumerState<SyncSettingsScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Sync your library across devices using a cloud-stored file.',
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        '1. Select a file in your iCloud Drive, Google Drive, or Dropbox folder using the picker above.\n'
-                        '2. This "Sync File" acts as a bridge. The app reads changes from it and writes your local changes to it.',
+                        '(1) Create new sync file (one time!) that’s accessible across devices (for example, in a cloud storage provider like iCloud Drive, Google Drive, OneDrive, etc.).\n\n'
+                        '(2) Select this file as your sync file on each device.\n\n'
+                        '(3) Sync and enjoy!',
                         style: TextStyle(fontSize: 13),
                       ),
                     ],

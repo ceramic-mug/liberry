@@ -9,12 +9,14 @@ class RemoteBookTile extends StatelessWidget {
   final RemoteBook book;
   final bool isStandardEbook;
   final Map<String, Book>? localBookMap;
+  final String? overrideTitle;
 
   const RemoteBookTile({
     super.key,
     required this.book,
     required this.isStandardEbook,
     this.localBookMap,
+    this.overrideTitle,
   });
 
   String _normalize(String s) {
@@ -123,7 +125,7 @@ class RemoteBookTile extends StatelessWidget {
         child: ListTile(
           contentPadding: const EdgeInsets.all(8),
           title: Text(
-            book.title,
+            overrideTitle ?? book.title,
             style: const TextStyle(fontWeight: FontWeight.bold),
           ),
           subtitle: Column(

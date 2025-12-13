@@ -1000,6 +1000,12 @@ class BookCollectionsData {
         group: '18th Century',
       ),
       CollectionBook(
+        title: 'A Modest Proposal',
+        author: 'Jonathan Swift',
+        source: 'SE',
+        group: '18th Century',
+      ),
+      CollectionBook(
         title: 'Candide',
         author: 'Voltaire',
         source: 'SE',
@@ -1211,12 +1217,7 @@ class BookCollectionsData {
         source: 'SE',
         group: '19th Century',
       ),
-      CollectionBook(
-        title: 'Alice in Wonderland',
-        author: 'Lewis Carroll',
-        source: 'SE',
-        group: '19th Century',
-      ),
+
       CollectionBook(
         title: 'Crime and Punishment',
         author: 'Fyodor Dostoevsky',
@@ -1271,13 +1272,7 @@ class BookCollectionsData {
         source: 'SE',
         group: '19th Century',
       ),
-      CollectionBook(
-        title: 'Alice\'s Adventures in Wonderland & Through the Looking-Glass',
-        author: 'Lewis Carroll',
-        source: 'SE',
-        group: '19th Century',
-        customSearchTerm: 'Alice\'s Adventures in Wonderland',
-      ),
+
       CollectionBook(
         title: 'Around the World in Eighty Days',
         author: 'Jules Verne',
@@ -1353,6 +1348,12 @@ class BookCollectionsData {
       CollectionBook(
         title: 'The Adventures of Sherlock Holmes',
         author: 'Sir Arthur Conan Doyle',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Yellow Wallpaper',
+        author: 'Charlotte Perkins Gilman',
         source: 'SE',
         group: '19th Century',
       ),

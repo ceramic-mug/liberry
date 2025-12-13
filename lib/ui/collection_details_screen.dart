@@ -306,6 +306,7 @@ class _CollectionDetailsScreenState
                       book: remoteBook,
                       isStandardEbook: remoteBook.source == 'Standard Ebooks',
                       localBookMap: localBookMap,
+                      overrideTitle: b.title,
                     );
                   } else {
                     return _CollectionBookTile(
@@ -331,6 +332,7 @@ class _CollectionDetailsScreenState
         book: remoteBook,
         isStandardEbook: remoteBook.source == 'Standard Ebooks',
         localBookMap: localBookMap,
+        overrideTitle: book.title,
       );
     } else {
       return _CollectionBookTile(
