@@ -128,11 +128,42 @@ class LocalEbooksService {
     final Set<String> seenIds = {};
     final List<RemoteBook> results = [];
 
+    // Token-based matching for better flexibility (order independent)
+    final queryTokens = lowerQuery
+        .split(' ')
+        .where((t) => t.isNotEmpty)
+        .toList();
+
     for (var book in _allBooks) {
       if (seenIds.contains(book.id)) continue;
 
-      if (book.title.toLowerCase().contains(lowerQuery) ||
-          book.author.toLowerCase().contains(lowerQuery)) {
+      final bookTitleLower = book.title.toLowerCase();
+      final bookAuthorLower = book.author.toLowerCase();
+
+      // Check if ALL query tokens are in the title OR author
+      // This allows "Maltese Falcon" to match "The Maltese Falcon" (if "The" was stripped or present)
+      // and "Rue Morgue" to match "Murders in the Rue Morgue".
+
+      // Title check
+      bool titleMatch = true;
+      for (var token in queryTokens) {
+        if (!bookTitleLower.contains(token)) {
+          titleMatch = false;
+          break;
+        }
+      }
+
+      // Author match (simple containment is usually fine for search bar, but let's be consistent)
+      // Actually normally search matches EITHER title OR author tokens.
+      // But here we want to find a book.
+      // If query is "Maltese Falcon", title match is what we want.
+
+      bool authorMatch = false;
+      if (bookAuthorLower.contains(lowerQuery)) {
+        authorMatch = true;
+      }
+
+      if (titleMatch || authorMatch) {
         seenIds.add(book.id);
         results.add(book.toRemoteBook());
       }

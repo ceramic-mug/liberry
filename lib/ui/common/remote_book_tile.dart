@@ -28,6 +28,11 @@ class RemoteBookTile extends StatelessWidget {
     final existingLocalBook = localBookMap?[key];
     final isDownloaded = existingLocalBook != null;
 
+    final isRead =
+        isDownloaded &&
+        (existingLocalBook!.status == 'read' || existingLocalBook.isRead);
+    final isReading = isDownloaded && existingLocalBook!.status == 'reading';
+
     Widget imageWidget;
     if (book.coverUrl != null) {
       if (book.coverUrl!.startsWith('data:')) {
@@ -57,13 +62,25 @@ class RemoteBookTile extends StatelessWidget {
       imageWidget = _buildPlaceholder();
     }
 
+    Color cardColor;
+    if (isRead) {
+      cardColor = Colors.green.withOpacity(0.15);
+    } else if (isReading) {
+      cardColor = Colors.blue.withOpacity(0.15);
+    } else if (isDownloaded) {
+      // Not Started
+      cardColor = Colors.grey.withOpacity(0.15);
+    } else {
+      cardColor = Theme.of(
+        context,
+      ).colorScheme.surfaceContainerHighest.withOpacity(0.3);
+    }
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 0,
       clipBehavior: Clip.antiAlias,
-      color: Theme.of(
-        context,
-      ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+      color: cardColor,
       child: InkWell(
         onTap: () {
           if (isDownloaded) {
@@ -124,10 +141,7 @@ class RemoteBookTile extends StatelessWidget {
             ),
           ),
           trailing: isDownloaded
-              ? Icon(
-                  Icons.check_circle,
-                  color: Theme.of(context).colorScheme.primary,
-                )
+              ? _buildStatusChip(context, isRead, isReading)
               : (book.downloadUrl != null
                     ? IconButton(
                         icon: const Icon(Icons.download),
@@ -156,6 +170,42 @@ class RemoteBookTile extends StatelessWidget {
       height: 75,
       color: Colors.grey,
       child: const Icon(Icons.book),
+    );
+  }
+
+  Widget _buildStatusChip(BuildContext context, bool isRead, bool isReading) {
+    String label;
+    Color color;
+    Color textColor;
+
+    if (isRead) {
+      label = 'Read';
+      color = Colors.green.withOpacity(0.2);
+      textColor = Colors.green.shade800;
+    } else if (isReading) {
+      label = 'Reading';
+      color = Colors.blue.withOpacity(0.2);
+      textColor = Colors.blue.shade800;
+    } else {
+      label = 'Not Started';
+      color = Colors.grey.withOpacity(0.2);
+      textColor = Colors.grey.shade800;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }

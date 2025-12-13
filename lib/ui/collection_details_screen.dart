@@ -49,13 +49,28 @@ class _CollectionDetailsScreenState
     cleaned = cleaned.replaceAll(RegExp(r'[.\-,]'), ' ');
 
     // 4. Collapse multiple spaces
-    cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ');
+    cleaned = cleaned.replaceAll(RegExp(r'\s+'), ' ').trim();
+
+    // 5. Remove leading articles (The, A, An)
+    // matches "The ", "A ", "An " at the start
+    final articleRegex = RegExp(r'^(the|a|an)\s+', caseSensitive: false);
+    if (articleRegex.hasMatch(cleaned)) {
+      cleaned = cleaned.replaceFirst(articleRegex, '');
+    }
 
     return cleaned.trim();
   }
 
   bool _authorsMatch(String localAuthor, String remoteAuthor) {
     if (localAuthor.isEmpty || remoteAuthor.isEmpty) return false;
+
+    // Handle "Unknown" / "Anonymous" explicitly
+    if (localAuthor.toLowerCase() == 'unknown' ||
+        localAuthor.toLowerCase() == 'anonymous' ||
+        remoteAuthor.toLowerCase() == 'unknown' ||
+        remoteAuthor.toLowerCase() == 'anonymous') {
+      return true;
+    }
 
     // Normalize: lower case, replace dots/punctuation with SPACE to separate initials
     // e.g. "J.R.R.Tolkien" -> "j r r tolkien"
@@ -69,29 +84,9 @@ class _CollectionDetailsScreenState
     );
 
     // Check basic containment (if one is substring of other after cleaning)
-    // Warning: "Poe" is in "Porter"?
-    // But we usually have full names.
     if (cleanRemote.contains(cleanLocal.trim()) ||
         cleanLocal.contains(cleanRemote.trim()))
       return true;
-
-    // Tokenize
-    // Allow tokens of length 1 only if they are initials?
-    // Actually, simply splitting by space and ignoring empty is safest.
-    // If we filter too much, we lose "Li Po".
-    // "J R R Tolkien" -> J, R, R, Tolkien.
-    // "Tolkien, J. R. R." -> Tolkien, J, R, R.
-    // Intersection will be 4 items. Matches perfectly.
-    // "D.H. Lawrence" -> "d h lawrence".
-    // "Lawrence, D. H." -> "lawrence d h".
-    // Match.
-    // "H. G. Wells" -> "h g wells".
-    // "Herbert George Wells" -> "herbert george wells".
-    // Intersection: "wells" (1 item).
-    // Local size: 3 (h g wells). Remote size: 3.
-    // 1 < 3.
-    // So "H.G. Wells" would NOT match "Herbert George Wells" if we require FULL subset.
-    // But "Wells" is significant.
 
     final localTokens = cleanLocal
         .split(' ')
@@ -104,34 +99,20 @@ class _CollectionDetailsScreenState
 
     if (localTokens.isEmpty || remoteTokens.isEmpty) return false;
 
-    // Robust check:
-    // If we have a significant specific name match (length > 3), that's usually good enough for "same book".
-    // e.g. "Dostoevsky" is unique enough in the context of "Crime and Punishment".
-    // But "Smith" is not.
-
     final intersection = localTokens.intersection(remoteTokens);
-
-    // If any token with length > 3 matches, we assume match?
-    // "John Smith" vs "Jane Smith". Match "Smith". Bad.
-    // "Ivan Turgenev" vs "Turgenev". Match "Turgenev". Good.
-
-    // Strict subset check is best for Initials vs Full Name IF we have initials on both sides.
-    // But we might have "H.G. Wells" vs "Herbert George Wells".
-    // Let's filter out single letters for the "Significant subset" check.
-
     final localSig = localTokens.where((t) => t.length > 2).toSet();
     final remoteSig = remoteTokens.where((t) => t.length > 2).toSet();
     final intersectSig = intersection.where((t) => t.length > 2).toSet();
 
     if (localSig.isNotEmpty && remoteSig.isNotEmpty) {
-      // If significant parts match reasonably well
-      // e.g. "Ivan Turgenev" (sig: Ivan, Turgenev). "Turgenev" (sig: Turgenev).
-      // Intersect: Turgenev.
-      // It covers all of Remote's significant tokens.
-      if (intersectSig.length >= remoteSig.length ||
-          intersectSig.length >= localSig.length) {
-        return true;
-      }
+      // If we have at least one significant token match (e.g. "Poe", "Hammett", "Dostoevsky")
+      // And the titles matched (which is the context where this is called),
+      // that is usually sufficient.
+      // We previously required covering one SIDE's entire set of sig tokens.
+      // But "Edgar Allan Poe" vs "Poe" -> "Poe" covers "Poe".
+      // "Dashiell Hammett" vs "Hammett" -> "Hammett" match.
+
+      if (intersectSig.isNotEmpty) return true;
     }
 
     // Fallback: use all tokens (including initials) logic
@@ -148,8 +129,9 @@ class _CollectionDetailsScreenState
         try {
           RemoteBook? bestMatch;
 
-          // Use cleaned title for search query to avoid issues with punctuation/subtitles
-          final searchTitle = _cleanTitleForSearch(book.title);
+          // Use custom search term if provided, otherwise clean the title
+          final searchTitle =
+              book.customSearchTerm ?? _cleanTitleForSearch(book.title);
 
           // 1. Try Standard Ebooks first
           // Note: Local search is cheap, we can try exact title first, then cleaned title if needed?
@@ -245,12 +227,44 @@ class _CollectionDetailsScreenState
       groupedBooks[''] = widget.collection.books;
     }
 
+    // Calculate stats
+    int read = 0;
+    int reading = 0;
+    int notStarted = 0;
+
+    for (final book in widget.collection.books) {
+      // Try to find matching local book
+      Book? match;
+      // Simple title matching often suffices for library lookup
+      try {
+        match = localBookMap.values.firstWhere(
+          (b) =>
+              b.title.toLowerCase() == book.title.toLowerCase() ||
+              (b.title.toLowerCase().contains(book.title.toLowerCase()) &&
+                  b.author?.toLowerCase().contains(book.author.toLowerCase()) ==
+                      true),
+        );
+      } catch (_) {}
+
+      if (match != null) {
+        if (match.status == 'read' || match.isRead) {
+          read++;
+        } else if (match.status == 'reading') {
+          reading++;
+        } else {
+          notStarted++;
+        }
+      } else {
+        notStarted++;
+      }
+    }
+
     return Scaffold(
       appBar: AppBar(title: Text(widget.collection.title)),
       body: ListView(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         children: [
-          _buildHeader(context),
+          _buildHeader(context, read, reading, notStarted),
           if (_isLoading && _resolvedBooks.isEmpty)
             const Center(
               child: Padding(
@@ -297,6 +311,7 @@ class _CollectionDetailsScreenState
                     return _CollectionBookTile(
                       book: b,
                       onSearch: widget.onSearch,
+                      localBookMap: localBookMap,
                     );
                   }
                 }).toList(),
@@ -318,52 +333,102 @@ class _CollectionDetailsScreenState
         localBookMap: localBookMap,
       );
     } else {
-      return _CollectionBookTile(book: book, onSearch: widget.onSearch);
+      return _CollectionBookTile(
+        book: book,
+        onSearch: widget.onSearch,
+        localBookMap: localBookMap,
+      );
     }
   }
 
-  Widget _buildHeader(BuildContext context) {
+  Widget _buildHeader(
+    BuildContext context,
+    int read,
+    int reading,
+    int notStarted,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 24.0),
-      child: Row(
+      child: Column(
         children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: widget.collection.color.withOpacity(0.1),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              widget.collection.icon,
-              size: 48,
-              color: widget.collection.color,
-            ),
-          ),
-          const SizedBox(width: 24),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  widget.collection.title,
-                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                  ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: widget.collection.color.withOpacity(0.1),
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  widget.collection.subtitle,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
-                  ),
+                child: Icon(
+                  widget.collection.icon,
+                  size: 48,
+                  color: widget.collection.color,
                 ),
-              ],
-            ),
+              ),
+              const SizedBox(width: 24),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      widget.collection.title,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      widget.collection.subtitle,
+                      style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.6),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
+          // Stats Row
+          const SizedBox(height: 24),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _buildStatChip(context, 'Read', read, Colors.green),
+              _buildStatChip(context, 'Reading', reading, Colors.blue),
+              _buildStatChip(context, 'Not Started', notStarted, Colors.grey),
+            ],
+          ),
+          const Divider(height: 32),
         ],
       ),
+    );
+  }
+
+  Widget _buildStatChip(
+    BuildContext context,
+    String label,
+    int count,
+    Color color,
+  ) {
+    return Column(
+      children: [
+        Text(
+          count.toString(),
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.bold,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 12,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -371,68 +436,131 @@ class _CollectionDetailsScreenState
 class _CollectionBookTile extends ConsumerWidget {
   final CollectionBook book;
   final void Function(CollectionBook) onSearch;
+  final Map<String, Book>? localBookMap;
 
-  const _CollectionBookTile({required this.book, required this.onSearch});
+  const _CollectionBookTile({
+    required this.book,
+    required this.onSearch,
+    required this.localBookMap,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    return FutureBuilder<bool>(
-      future: ref.read(bookRepositoryProvider).isBookDownloaded(book.title),
-      builder: (context, snapshot) {
-        final isInLibrary = snapshot.data ?? false;
+    // Try to find matching local book
+    Book? localBook;
+    try {
+      localBook = localBookMap?.values.firstWhere(
+        (b) =>
+            b.title == book.title ||
+            (b.title.contains(book.title) &&
+                b.author != null &&
+                b.author!.contains(book.author)),
+      );
+    } catch (_) {}
 
-        final List<String> subtitleParts = [];
-        if (book.metadata.isNotEmpty) {
-          book.metadata.forEach((k, v) {
-            subtitleParts.add('$k: $v');
-          });
-        }
+    final isInLibrary = localBook != null;
+    final isRead =
+        isInLibrary && (localBook.status == 'read' || localBook.isRead);
+    final isReading = isInLibrary && localBook.status == 'reading';
 
-        final subtitle = subtitleParts.join(' • ');
+    final List<String> subtitleParts = [];
+    if (book.metadata.isNotEmpty) {
+      book.metadata.forEach((k, v) {
+        subtitleParts.add('$k: $v');
+      });
+    }
 
-        return Card(
-          elevation: 0,
-          color: Theme.of(
-            context,
-          ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
-          margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
-          child: ListTile(
-            title: Text(
-              book.title,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(book.author),
-                if (subtitle.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
-                    child: Text(
-                      subtitle,
-                      style: TextStyle(
-                        fontSize: 11,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
-                      ),
-                    ),
+    final subtitle = subtitleParts.join(' • ');
+
+    Color cardColor;
+    if (isRead) {
+      cardColor = Colors.green.withOpacity(0.15);
+    } else if (isReading) {
+      cardColor = Colors.blue.withOpacity(0.15);
+    } else if (isInLibrary) {
+      // Not Started
+      cardColor = Colors.grey.withOpacity(0.15);
+    } else {
+      cardColor = Theme.of(
+        context,
+      ).colorScheme.surfaceContainerHighest.withOpacity(0.3);
+    }
+
+    return Card(
+      elevation: 0,
+      color: cardColor,
+      margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 0),
+      child: ListTile(
+        title: Text(
+          book.title,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(book.author),
+            if (subtitle.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 4.0),
+                child: Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
                   ),
-              ],
-            ),
-            trailing: isInLibrary
-                ? const Icon(Icons.check_circle, color: Colors.green)
-                : const Icon(Icons.search),
-            onTap: () {
-              if (!isInLibrary) {
-                onSearch(book);
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('You already have this book!')),
-                );
-              }
-            },
-          ),
-        );
-      },
+                ),
+              ),
+          ],
+        ),
+        trailing: isInLibrary
+            ? _buildStatusChip(context, isRead, isReading)
+            : const Icon(Icons.search),
+        onTap: () {
+          if (!isInLibrary) {
+            onSearch(book);
+          } else {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('You already have this book!')),
+            );
+          }
+        },
+      ),
+    );
+  }
+
+  Widget _buildStatusChip(BuildContext context, bool isRead, bool isReading) {
+    String label;
+    Color color;
+    Color textColor;
+
+    if (isRead) {
+      label = 'Read';
+      color = Colors.green.withOpacity(0.2);
+      textColor = Colors.green.shade800;
+    } else if (isReading) {
+      label = 'Reading';
+      color = Colors.blue.withOpacity(0.2);
+      textColor = Colors.blue.shade800;
+    } else {
+      label = 'Not Started';
+      color = Colors.grey.withOpacity(0.2);
+      textColor = Colors.grey.shade800;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 12,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
     );
   }
 }

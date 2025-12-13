@@ -11,6 +11,7 @@ import 'collections_screen.dart';
 
 import 'offline_gutenberg_screen.dart';
 import 'standard_ebooks_screen.dart';
+import 'collection_details_screen.dart';
 
 class DiscoverScreen extends ConsumerStatefulWidget {
   const DiscoverScreen({super.key});
@@ -238,6 +239,76 @@ class _DiscoverScreenState extends ConsumerState<DiscoverScreen> {
     return ListView(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       children: [
+        // Top 100 Challenge Button
+        Card(
+          margin: const EdgeInsets.only(bottom: 16),
+          elevation: 0,
+          color: Theme.of(
+            context,
+          ).colorScheme.tertiaryContainer.withValues(alpha: 0.4),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(12),
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => CollectionDetailsScreen(
+                    collection: BookCollectionsData.top100,
+                    onSearch: _searchCollectionBook,
+                  ),
+                ),
+              );
+            },
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Row(
+                children: [
+                  Icon(
+                    BookCollectionsData.top100.icon,
+                    size: 28,
+                    color: Theme.of(context).colorScheme.tertiary,
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          BookCollectionsData.top100.title,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).colorScheme.onSurface,
+                          ),
+                        ),
+                        Text(
+                          BookCollectionsData.top100.subtitle,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(
+                              context,
+                            ).colorScheme.onSurface.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withValues(alpha: 0.5),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+
         // Collections Button
         Card(
           margin: const EdgeInsets.only(bottom: 16),

@@ -56,11 +56,46 @@ class OfflineGutenbergService {
 
       // Sanitize query for FTS5 (remove special syntax chars if needed)
       // FTS syntax: "austen*" matches "austen" and "austens"
-      final sanitized = query.replaceAll(RegExp(r'[^a-zA-Z0-9 ]'), '');
+      // we replace non-alphanumeric with SPACE to preserve word boundaries
+      // e.g. "Elfland's" -> "Elfland s" which matches FTS tokens "Elfland" + "s"
+      final sanitized = query
+          .replaceAll(RegExp(r'[^a-zA-Z0-9 ]'), ' ')
+          .replaceAll(RegExp(r'\s+'), ' ')
+          .trim();
       if (sanitized.isEmpty) return [];
 
       // Query using MATCH
-      // Using simple formatting: title OR author matches query*
+      // We use token-based AND matching instead of phrase matching to handle
+      // "The Title" vs "Title, The" and other variations.
+      // e.g. "The Murders" -> "The* Murders*"
+      final tokens = sanitized.split(' ');
+
+      // Filter out common English stopwords to avoid FTS failures if they aren't indexed
+      // or if they cause noise.
+      final stopWords = {
+        'the',
+        'of',
+        'in',
+        'a',
+        'an',
+        'and',
+        'to',
+        'for',
+        'with',
+        'on',
+        'at',
+        'by',
+        'from',
+      };
+
+      final validTokens = tokens
+          .where((t) => t.isNotEmpty && !stopWords.contains(t.toLowerCase()))
+          .toList();
+
+      if (validTokens.isEmpty) return [];
+
+      final matchQuery = validTokens.map((t) => '$t*').join(' ');
+
       final results = await db.rawQuery(
         '''
         SELECT rowid as id, title, author 
@@ -69,8 +104,8 @@ class OfflineGutenbergService {
         ORDER BY rank 
         LIMIT 50
       ''',
-        ['"$sanitized"*'],
-      ); // Enquote and add wildcards for prefix matching
+        [matchQuery],
+      );
 
       return results;
     } catch (e) {

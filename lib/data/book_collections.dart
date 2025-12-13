@@ -5,6 +5,8 @@ class CollectionBook {
   final String author;
   final String source; // e.g. 'SE', 'PG'
   final String? group; // e.g. 'Antebellum', 'Gothic Sci-Fi'
+  final String?
+  customSearchTerm; // Override search query (e.g. for short stories in collections)
   final Map<String, String>
   metadata; // e.g. {'Translator': '...', 'Critical Focus': '...'}
 
@@ -13,6 +15,7 @@ class CollectionBook {
     required this.author,
     required this.source,
     this.group,
+    this.customSearchTerm,
     this.metadata = const {},
   });
 }
@@ -261,7 +264,7 @@ class BookCollectionsData {
         ),
         CollectionBook(
           group: 'Scientific Romance',
-          title: '20,000 Leagues Under the Sea',
+          title: 'Twenty Thousand Leagues Under the Sea',
           author: 'Jules Verne',
           source: 'SE',
           metadata: {'Key Concept': 'Exploration, Technology'},
@@ -304,6 +307,7 @@ class BookCollectionsData {
           title: 'The Murders in the Rue Morgue',
           author: 'Edgar Allan Poe',
           source: 'SE',
+          customSearchTerm: 'Short Fiction',
           metadata: {'Sub-Genre': 'Ratiocination'}, // Keeping prompt structure
         ),
         CollectionBook(
@@ -347,13 +351,6 @@ class BookCollectionsData {
           author: 'Dashiell Hammett',
           source: 'SE',
           metadata: {'Sub-Genre': 'Noir / Continental Op'},
-        ),
-        CollectionBook(
-          group: 'Hardboiled',
-          title: 'The Maltese Falcon',
-          author: 'Dashiell Hammett',
-          source: 'SE/PG',
-          metadata: {'Sub-Genre': 'Noir / Sam Spade'},
         ),
       ],
     ),
@@ -836,8 +833,629 @@ class BookCollectionsData {
         ),
       ],
     ),
-  ]; // End of previous list - wait, I need to remove the closing bracket to append.
-  // Actually, I can just replace the closing bracket line with the new items + closing bracket.
-  // But let's check the tool usage. It replaces "TargetContent".
-  // So I will target "  ];" at the end and replace it with ", ... new items ... ];"
+  ];
+
+  // Standalone collection for the Home/Discover screen
+  static final BookCollection top100 = BookCollection(
+    title: 'Top 100 Challenge',
+    subtitle: 'Classic and Key Literature',
+    icon: Icons.library_books, // Stack of books
+    color: Colors.amber,
+    groupingLabel: 'Status',
+    books: [
+      // Ancient
+      CollectionBook(
+        title: 'The Odyssey',
+        author: 'Homer',
+        source: 'SE',
+        group: 'Ancient',
+      ),
+      CollectionBook(
+        title: 'The Iliad',
+        author: 'Homer',
+        source: 'SE',
+        group: 'Ancient',
+      ),
+      CollectionBook(
+        title: 'Aesop\'s Fables',
+        author: 'Aesop',
+        source: 'SE',
+        group: 'Ancient',
+      ),
+      CollectionBook(
+        title: 'The Art of War',
+        author: 'Sun Tzu',
+        source: 'SE',
+        group: 'Ancient',
+      ),
+      CollectionBook(
+        title: 'The Republic',
+        author: 'Plato',
+        source: 'SE',
+        group: 'Ancient',
+      ),
+      // Medieval
+      CollectionBook(
+        title: 'Beowulf',
+        author: 'Unknown',
+        source: 'SE',
+        group: 'Medieval',
+      ),
+      CollectionBook(
+        title: 'The Divine Comedy',
+        author: 'Dante Alighieri',
+        source: 'SE',
+        group: 'Medieval',
+      ),
+      CollectionBook(
+        title: 'The Canterbury Tales',
+        author: 'Geoffrey Chaucer',
+        source: 'SE',
+        group: 'Medieval',
+      ),
+
+      // 16th Century
+      CollectionBook(
+        title: 'The Prince',
+        author: 'Niccolò Machiavelli',
+        source: 'SE',
+        group: '16th Century',
+      ),
+      CollectionBook(
+        title: 'Romeo and Juliet',
+        author: 'William Shakespeare',
+        source: 'SE',
+        group: '16th Century',
+      ),
+
+      // 17th Century
+      CollectionBook(
+        title: 'Hamlet',
+        author: 'William Shakespeare',
+        source: 'SE',
+        group: '17th Century',
+      ),
+      CollectionBook(
+        title: 'Don Quixote',
+        author: 'Miguel de Cervantes Saavedra',
+        source: 'SE',
+        group: '17th Century',
+      ),
+      CollectionBook(
+        title: 'Othello',
+        author: 'William Shakespeare',
+        source: 'SE',
+        group: '17th Century',
+      ),
+      CollectionBook(
+        title: 'Macbeth',
+        author: 'William Shakespeare',
+        source: 'SE',
+        group: '17th Century',
+      ),
+      CollectionBook(
+        title: 'Paradise Lost',
+        author: 'John Milton',
+        source: 'SE',
+        group: '17th Century',
+      ),
+
+      // 18th Century
+      CollectionBook(
+        title: 'Robinson Crusoe',
+        author: 'Daniel Defoe',
+        source: 'SE',
+        group: '18th Century',
+      ),
+      CollectionBook(
+        title: 'Gulliver\'s Travels',
+        author: 'Jonathan Swift',
+        source: 'SE',
+        group: '18th Century',
+      ),
+      CollectionBook(
+        title: 'Candide',
+        author: 'Voltaire',
+        source: 'SE',
+        group: '18th Century',
+      ),
+      CollectionBook(
+        title: 'The Wealth of Nations',
+        author: 'Adam Smith',
+        source: 'SE',
+        group: '18th Century',
+      ),
+      CollectionBook(
+        title: 'The Autobiography of Benjamin Franklin',
+        author: 'Benjamin Franklin',
+        source: 'SE',
+        group: '18th Century',
+      ),
+
+      // 19th Century
+      CollectionBook(
+        title: 'Sense and Sensibility',
+        author: 'Jane Austen',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Grimms\' Fairy Tales',
+        author: 'Brothers Grimm',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Pride and Prejudice',
+        author: 'Jane Austen',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Mansfield Park',
+        author: 'Jane Austen',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Emma',
+        author: 'Jane Austen',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Frankenstein',
+        author: 'Mary Shelley',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Persuasion',
+        author: 'Jane Austen',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Northanger Abbey',
+        author: 'Jane Austen',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Ivanhoe',
+        author: 'Walter Scott',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Notre-Dame de Paris',
+        author: 'Victor Hugo',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Oliver Twist',
+        author: 'Charles Dickens',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Nicholas Nickleby',
+        author: 'Charles Dickens',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'A Christmas Carol',
+        author: 'Charles Dickens',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Three Musketeers',
+        author: 'Alexandre Dumas',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Count of Monte Cristo',
+        author: 'Alexandre Dumas',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Jane Eyre',
+        author: 'Charlotte Brontë',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Wuthering Heights',
+        author: 'Emily Brontë',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'David Copperfield',
+        author: 'Charles Dickens',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Scarlet Letter',
+        author: 'Nathaniel Hawthorne',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Moby-Dick or, The Whale',
+        author: 'Herman Melville',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Uncle Tom\'s Cabin',
+        author: 'Harriet Beecher Stowe',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Bleak House',
+        author: 'Charles Dickens',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Walden',
+        author: 'Henry David Thoreau',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Leaves of Grass',
+        author: 'Walt Whitman',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'North and South',
+        author: 'Elizabeth Gaskell',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Origin of Species',
+        author: 'Charles Darwin',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'A Tale of Two Cities',
+        author: 'Charles Dickens',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Woman in White',
+        author: 'Wilkie Collins',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Great Expectations',
+        author: 'Charles Dickens',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Les Misérables',
+        author: 'Victor Hugo',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Journey to the Center of the Earth',
+        author: 'Jules Verne',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Alice\'s Adventures in Wonderland',
+        author: 'Lewis Carroll',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Alice in Wonderland',
+        author: 'Lewis Carroll',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Crime and Punishment',
+        author: 'Fyodor Dostoevsky',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Little Women',
+        author: 'Louisa May Alcott',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Moonstone',
+        author: 'Wilkie Collins',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Idiot',
+        author: 'Fyodor Dostoevsky',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'War and Peace',
+        author: 'Leo Tolstoy',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Demons',
+        author: 'Fyodor Dostoevsky',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Twenty Thousand Leagues Under the Sea',
+        author: 'Jules Verne',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Middlemarch',
+        author: 'George Eliot',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Through the Looking-Glass',
+        author: 'Lewis Carroll',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Alice\'s Adventures in Wonderland & Through the Looking-Glass',
+        author: 'Lewis Carroll',
+        source: 'SE',
+        group: '19th Century',
+        customSearchTerm: 'Alice\'s Adventures in Wonderland',
+      ),
+      CollectionBook(
+        title: 'Around the World in Eighty Days',
+        author: 'Jules Verne',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Adventures of Tom Sawyer',
+        author: 'Mark Twain',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Anna Karenina',
+        author: 'Leo Tolstoy',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Brothers Karamazov',
+        author: 'Fyodor Dostoevsky',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Treasure Island',
+        author: 'Robert Louis Stevenson',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Adventures of Huckleberry Finn',
+        author: 'Mark Twain',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Flatland',
+        author: 'Edwin A. Abbott',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Strange Case of Dr. Jekyll and Mr. Hyde',
+        author: 'Robert Louis Stevenson',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'A Study in Scarlet',
+        author: 'Arthur Conan Doyle',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Picture of Dorian Gray',
+        author: 'Oscar Wilde',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Sign of Four',
+        author: 'Sir Arthur Conan Doyle',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Tess of the d\'Urbervilles',
+        author: 'Thomas Hardy',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Adventures of Sherlock Holmes',
+        author: 'Sir Arthur Conan Doyle',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Jungle Book',
+        author: 'Rudyard Kipling',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Time Machine',
+        author: 'H.G. Wells',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Importance of Being Earnest',
+        author: 'Oscar Wilde',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Island of Doctor Moreau',
+        author: 'H. G. Wells',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Dracula',
+        author: 'Bram Stoker',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The Invisible Man',
+        author: 'H. G. Wells',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'The War of the Worlds',
+        author: 'H. G. Wells',
+        source: 'SE',
+        group: '19th Century',
+      ),
+      CollectionBook(
+        title: 'Heart of Darkness',
+        author: 'Joseph Conrad',
+        source: 'SE',
+        group: '19th Century',
+      ),
+
+      // 20th Century
+      CollectionBook(
+        title: 'The Wonderful Wizard of Oz',
+        author: 'L. Frank Baum',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Hound of the Baskervilles',
+        author: 'Sir Arthur Conan Doyle',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Call of the Wild',
+        author: 'Jack London',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Scarlet Pimpernel',
+        author: 'Baroness Orczy',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'A Little Princess',
+        author: 'Frances Hodgson Burnett',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'White Fang',
+        author: 'Jack London',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'Anne of Green Gables',
+        author: 'L. M. Montgomery',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Wind in the Willows',
+        author: 'Kenneth Grahame',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Phantom of the Opera',
+        author: 'Gaston Leroux',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Secret Garden',
+        author: 'Frances Hodgson Burnett',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'Peter Pan',
+        author: 'J. M. Barrie',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Lost World',
+        author: 'Arthur Conan Doyle',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'A Princess of Mars',
+        author: 'Edgar Rice Burroughs',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Metamorphosis',
+        author: 'Franz Kafka',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Elements of Style',
+        author: 'William Strunk Jr.',
+        source: 'SE',
+        group: '20th Century',
+      ),
+      CollectionBook(
+        title: 'The Great Gatsby',
+        author: 'F. Scott Fitzgerald',
+        source: 'SE',
+        group: '20th Century',
+      ),
+    ],
+  );
 }
