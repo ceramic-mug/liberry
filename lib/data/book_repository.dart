@@ -160,6 +160,61 @@ class BookRepository {
     return id;
   }
 
+  Future<String> addOffloadedBook({
+    required String title,
+    required String author,
+    String? remoteCoverUrl,
+    String? sourceMetadata,
+  }) async {
+    String? coverPath;
+
+    // 1. Try to download remote cover if provided
+    if (remoteCoverUrl != null) {
+      print(
+        'Attempting to download remote cover for offloaded book: $remoteCoverUrl',
+      );
+      try {
+        final appDir = await getApplicationDocumentsDirectory();
+        final coversDir = Directory(p.join(appDir.path, 'covers'));
+        if (!await coversDir.exists()) {
+          await coversDir.create(recursive: true);
+        }
+
+        final coverFileName = '${const Uuid().v4()}.png';
+        final coverFile = File(p.join(coversDir.path, coverFileName));
+
+        // Download the image
+        final request = await HttpClient().getUrl(Uri.parse(remoteCoverUrl));
+        final response = await request.close();
+        await response.pipe(coverFile.openWrite());
+
+        coverPath = p.join('covers', coverFileName);
+        print('Downloaded and saved remote cover to: $coverPath');
+      } catch (e) {
+        print('Failed to download remote cover: $e');
+      }
+    }
+
+    final id = const Uuid().v4();
+    await _db
+        .into(_db.books)
+        .insert(
+          BooksCompanion.insert(
+            id: id,
+            title: title,
+            filePath: '', // Empty path for offloaded books
+            author: Value(author),
+            coverPath: Value(coverPath),
+            sourceMetadata: Value(sourceMetadata),
+            status: const Value('read'), // Mark as read immediately
+            group: const Value('bookshelf'), // Place on bookshelf
+            isDownloaded: const Value(false),
+            isRead: const Value(true), // Sync legacy field
+          ),
+        );
+    return id;
+  }
+
   Future<List<Book>> getAllBooks() async {
     final books = await (_db.select(
       _db.books,

@@ -37,6 +37,7 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
   // Download state
   String? _bookId;
   bool _isDownloading = false;
+  String _loadingMessage = "Downloading..."; // Dynamic loading text
   String? _error;
 
   // Animation for downloading state
@@ -77,6 +78,7 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
 
     setState(() {
       _isDownloading = true;
+      _loadingMessage = "Downloading...";
       _error = null;
     });
 
@@ -102,6 +104,46 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
           _isDownloading = false;
           _addedToDesk = true; // Mark as added since we did it auto
         });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = e.toString();
+          _isDownloading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _markAsRead() async {
+    setState(() {
+      _isDownloading = true; // Show loading
+      _loadingMessage = "Saving title to bookshelf...";
+    });
+
+    try {
+      final bookId = await ref
+          .read(bookRepositoryProvider)
+          .addOffloadedBook(
+            title: widget.book.title,
+            author: widget.book.author,
+            remoteCoverUrl: widget.book.coverUrl,
+            sourceMetadata: jsonEncode(widget.book.toJson()),
+          );
+
+      if (mounted) {
+        setState(() {
+          _bookId = bookId;
+          _isDownloading = false;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Marked as read and added to bookshelf'),
+          ),
+        );
+
+        Navigator.pop(context); // Return to collection
       }
     } catch (e) {
       if (mounted) {
@@ -450,6 +492,23 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
                           ),
                         ),
                       ),
+                      const SizedBox(height: 16),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _markAsRead,
+                          icon: const Icon(Icons.check),
+                          label: const Text("Mark as Already Read"),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: const BorderSide(color: Colors.white30),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ]
                   // ==========================
@@ -459,7 +518,7 @@ class _DownloadSplashScreenState extends ConsumerState<DownloadSplashScreen>
                     const CircularProgressIndicator(color: Colors.white),
                     const SizedBox(height: 20),
                     Text(
-                      "Downloading...",
+                      _loadingMessage,
                       style: TextStyle(
                         color: Colors.white.withOpacity(0.5),
                         fontSize: 14,
