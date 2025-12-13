@@ -596,70 +596,103 @@ function setupHorizontalObservers() {
         snapToPage(targetPage);
     });
 
-    function snapToPage(pageIndex) {
-        var w = window.innerWidth;
-        var scrollW = container.scrollWidth;
-        var maxPage = Math.ceil(scrollW / w) - 1;
-
-        if (pageIndex < 0) {
-            container.scrollLeft = 0;
-            if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onPrevChapter');
-            return;
-        }
-        if (pageIndex > maxPage) {
-            container.scrollLeft = maxPage * w;
-            if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onNextChapter');
-            return;
-        }
-
-        // CSS Smooth scroll doesn't always work perfectly with programmatic scrollLeft in loop
-        // Standard assignment is usually better here unless utilizing scrollIntoView
-        container.scrollTo({ left: pageIndex * w, behavior: 'smooth' });
-        setTimeout(reportHorizontalLocation, 300);
-    }
-
-    function handleTap(x) {
-        var w = window.innerWidth;
-        var p = x / w;
-        if (p < 0.2) snapToPage(Math.round(container.scrollLeft / w) - 1);
-        else if (p > 0.8) snapToPage(Math.round(container.scrollLeft / w) + 1);
-        else if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onTap');
-    }
-
-    function reportHorizontalLocation() {
-        var path = getHorizontalLocation();
-        if (path && window.flutter_inappwebview) {
-            window.flutter_inappwebview.callHandler('onScrollProgress', path);
-        }
-    }
-
-    function getHorizontalLocation() {
-        // Precise Horizontal Location
-        // We probe a bit inside the page to avoid margin issues
-        var xScreen = 60; // Just past the left margin usually
-        var yScreen = 80; // Down from top
-
-        if (document.caretPositionFromPoint) {
-            var pos = document.caretPositionFromPoint(xScreen, yScreen);
-            if (pos && pos.offsetNode) {
-                return JSON.stringify({ type: 'precise', path: getPathTo(pos.offsetNode), offset: pos.offset });
-            }
-        } else if (document.caretRangeFromPoint) {
-            var range = document.caretRangeFromPoint(xScreen, yScreen);
-            if (range && range.startContainer) {
-                return JSON.stringify({ type: 'precise', path: getPathTo(range.startContainer), offset: range.startOffset });
-            }
-        }
-
-        // Fallback to element lookup
-        var el = document.elementFromPoint(xScreen, yScreen);
-        if (el && el !== document.body) return getPathTo(el);
-
-        return null;
-    }
-
-    window.getCurrentLocationPath = getHorizontalLocation;
+    setTimeout(reportHorizontalLocation, 300);
 }
+
+function handleTap(x) {
+    var container = document.getElementById('reader-content');
+    if (!container) return;
+
+    var w = container.clientWidth; // Use container width (excludes padding)
+    var p = x / w;
+    if (p < 0.2) snapToPage(Math.round(container.scrollLeft / w) - 1);
+    else if (p > 0.8) snapToPage(Math.round(container.scrollLeft / w) + 1);
+    else if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onTap');
+}
+
+
+function snapToPage(pageIndex) {
+    var container = document.getElementById('reader-content');
+    if (!container) return;
+
+    var w = container.clientWidth;
+    var scrollW = container.scrollWidth;
+
+    // Logic to detect max page
+    // Standard: Math.ceil(scrollW / w) - 1
+    // If we have a tiny overflow (e.g. 1px), ceil pumps it up to a whole new page which is blank.
+    // Let's use a tolerance.
+    // If remainder is small (< 10px), ignore it.
+    var remainder = scrollW % w;
+    var pages = Math.floor(scrollW / w);
+    if (remainder > 10) { // Tolerance of 10px
+        pages += 1;
+    }
+    var maxPage = pages - 1;
+
+    console.log("DEBUG: snapToPage request: " + pageIndex + ". Max: " + maxPage + ". W: " + w + " ScrollW: " + scrollW + " CurrScroll: " + container.scrollLeft);
+
+    if (pageIndex < 0) {
+        if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onPrevChapter');
+        return;
+    }
+
+    // Eagerly check if we are 'at the end' or requesting beyond it
+    if (pageIndex > maxPage) {
+        console.log("DEBUG: Triggering Next Chapter");
+        if (window.flutter_inappwebview) window.flutter_inappwebview.callHandler('onNextChapter');
+        return;
+    }
+
+    // Also check if the TARGET scroll position is basically at the end
+    // If we are snapping to the last page, and that last page is basically empty?
+    // Hard to know. But we can check if we are *already* at the last page and requesting it again?
+    // No, pageIndex changes.
+
+    container.scrollTo({
+        left: pageIndex * w,
+        behavior: 'smooth'
+    });
+    setTimeout(reportHorizontalLocation, 300);
+}
+
+// Expose for Flutter to call after changing settings
+window.snapToPage = snapToPage;
+
+function reportHorizontalLocation() {
+    var path = getHorizontalLocation();
+    if (path && window.flutter_inappwebview) {
+        window.flutter_inappwebview.callHandler('onScrollProgress', path);
+    }
+}
+
+function getHorizontalLocation() {
+    // Precise Horizontal Location
+    // We probe a bit inside the page to avoid margin issues
+    var xScreen = 60; // Just past the left margin usually
+    var yScreen = 80; // Down from top
+
+    if (document.caretPositionFromPoint) {
+        var pos = document.caretPositionFromPoint(xScreen, yScreen);
+        if (pos && pos.offsetNode) {
+            return JSON.stringify({ type: 'precise', path: getPathTo(pos.offsetNode), offset: pos.offset });
+        }
+    } else if (document.caretRangeFromPoint) {
+        var range = document.caretRangeFromPoint(xScreen, yScreen);
+        if (range && range.startContainer) {
+            return JSON.stringify({ type: 'precise', path: getPathTo(range.startContainer), offset: range.startOffset });
+        }
+    }
+
+    // Fallback to element lookup
+    var el = document.elementFromPoint(xScreen, yScreen);
+    if (el && el !== document.body) return getPathTo(el);
+
+    return null;
+}
+
+window.getCurrentLocationPath = getHorizontalLocation;
+
 
 /* ---------------- MENU & INTERACTION UTILS ---------------- */
 var currentHighlightId = null;

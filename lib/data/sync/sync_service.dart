@@ -11,16 +11,19 @@ import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:liberry/data/remote/remote_book.dart';
 import 'package:uuid/uuid.dart';
+import 'package:dio/dio.dart';
 
 final syncServiceProvider = Provider((ref) {
   final db = ref.watch(databaseProvider);
-  return SyncService(db);
+  final dio = ref.read(dioProvider);
+  return SyncService(db, dio);
 });
 
 class SyncService {
   final AppDatabase _db;
+  final Dio _dio;
 
-  SyncService(this._db);
+  SyncService(this._db, this._dio);
 
   Future<void> exportToSyncFile(File file) async {
     // SAFE SYNC EXPORT:
@@ -282,18 +285,29 @@ class SyncService {
               final coverFile = File(p.join(coversDir.path, coverFileName));
 
               try {
-                final request = await HttpClient().getUrl(
-                  Uri.parse(remoteBook.coverUrl!),
+                // Use Dio for robust downloading
+                await _dio.download(
+                  remoteBook.coverUrl!,
+                  coverFile.path,
+                  options: Options(
+                    responseType: ResponseType.bytes,
+                    sendTimeout: const Duration(seconds: 10),
+                    receiveTimeout: const Duration(seconds: 30),
+                  ),
                 );
-                final response = await request.close();
-                await response.pipe(coverFile.openWrite());
 
-                // Collect the update for batch apply later
-                final newCoverPath = p.join('covers', coverFileName);
-                coverUpdates[book.id] = newCoverPath;
-                print(
-                  'Downloaded cover to $newCoverPath (will update DB in batch)',
-                );
+                // Verify file size
+                if (await coverFile.length() > 0) {
+                  // Collect the update for batch apply later
+                  final newCoverPath = p.join('covers', coverFileName);
+                  coverUpdates[book.id] = newCoverPath;
+                  print(
+                    'Downloaded cover to $newCoverPath (will update DB in batch)',
+                  );
+                } else {
+                  print('Downloaded cover file is empty: ${coverFile.path}');
+                  await coverFile.delete(); // Cleanup empty file
+                }
               } catch (e) {
                 print('Failed to download cover during restore: $e');
               }
@@ -329,6 +343,7 @@ class SyncService {
   }
 
   Future<void> _mergeBooks(List<SyncBook> remoteBooks) async {
+    // ... [Original _mergeBooks implementation] ...
     for (final remote in remoteBooks) {
       final local = await (_db.select(
         _db.books,
@@ -398,6 +413,7 @@ class SyncService {
   Future<void> _mergeReadingProgress(
     List<SyncReadingProgressData> remoteProgress,
   ) async {
+    // ... [Same as before] ...
     for (final remote in remoteProgress) {
       final local = await (_db.select(
         _db.readingProgress,
@@ -436,6 +452,7 @@ class SyncService {
     }
   }
 
+  // ... [Other merge methods remain unchanged] ...
   Future<void> _mergeCharacters(List<SyncCharacter> remoteCharacters) async {
     for (final remote in remoteCharacters) {
       final local = await (_db.select(

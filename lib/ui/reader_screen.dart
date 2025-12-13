@@ -59,17 +59,28 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
   ReaderScrollMode _scrollMode = ReaderScrollMode.vertical;
   double _fontSize = 100.0;
   String _fontFamily = 'Georgia';
+  double _sideMargin = 20.0;
+  bool _twoColumnEnabled = false;
 
   // Services
   late EpubService _epubService;
+
+  late FocusNode _focusNode;
 
   bool _isGutenberg = false;
 
   @override
   void initState() {
     super.initState();
+    _focusNode = FocusNode();
     _epubService = ref.read(epubServiceProvider);
     _loadBook();
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
   }
 
   Future<void> _loadBook() async {
@@ -82,6 +93,8 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
       _scrollMode = settingsRepo.getScrollMode();
       _fontSize = settingsRepo.getFontSize();
       _fontFamily = settingsRepo.getFontFamily();
+      _sideMargin = settingsRepo.getSideMargin();
+      _twoColumnEnabled = settingsRepo.getTwoColumnEnabled();
 
       // Parse Epub
       final file = File(widget.book.filePath);
@@ -286,7 +299,9 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           startAnchor: startAnchor,
           endAnchor: endAnchor,
           isGutenberg: _isGutenberg,
-          isInteractionLocked: _showControls, // Maintain lock state
+          isInteractionLocked: _showControls,
+          sideMargin: _sideMargin,
+          twoColumnEnabled: _twoColumnEnabled, // Maintain lock state
         );
 
         _updateWebViewSettings();
@@ -344,10 +359,6 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
-  String _colorToHex(Color color) {
-    return '#${color.value.toRadixString(16).substring(2)}';
-  }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) {
@@ -376,135 +387,199 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
           // WebView
           Positioned.fill(
             child: SafeArea(
-              child: InAppWebView(
-                key: ValueKey(
-                  _scrollMode,
-                ), // Force rebuild when mode changes to apply paging settings
-                initialSettings: InAppWebViewSettings(
-                  transparentBackground: true,
-                  supportZoom: false,
-                  horizontalScrollBarEnabled: false,
-                  verticalScrollBarEnabled: false,
-                  isPagingEnabled:
-                      false, // Disable native paging, we handle it with JS
-                  disableContextMenu: true,
-                  pageZoom: 1.0,
-                ),
-                onWebViewCreated: (controller) {
-                  _webViewController = controller;
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onTap',
-                    callback: (_) => _toggleControls(),
-                  );
-
-                  // Progress Handler (Granular)
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onScrollProgress',
-                    callback: (args) {
-                      if (args.isNotEmpty) {
-                        final cfi = args[0].toString();
-                        // Only update if changed to avoid spam
-                        if (cfi != _currentProgressCfi) {
-                          _currentProgressCfi = cfi; // Update local state
-                          _saveProgress(_currentChapterIndex, cfi);
+              child: Focus(
+                focusNode: _focusNode,
+                autofocus: true,
+                onKey: (node, event) {
+                  if (event is RawKeyDownEvent) {
+                    print(
+                      "DEBUG: Key Down: ${event.logicalKey.keyLabel} (${event.logicalKey.keyId})",
+                    );
+                    if (event.logicalKey == LogicalKeyboardKey.arrowRight) {
+                      print("DEBUG: Handling ArrowRight from Flutter");
+                      _webViewController?.evaluateJavascript(
+                        source: """
+                        try {
+                          var el = document.getElementById('reader-content');
+                          if (el) {
+                             var page = Math.round(el.scrollLeft / el.clientWidth) + 1;
+                             if (window.snapToPage) {
+                                window.snapToPage(page);
+                             } else {
+                                console.log("ERROR: snapToPage not found");
+                             }
+                          } else {
+                             console.log("ERROR: reader-content not found");
+                          }
+                        } catch (e) {
+                          console.log("ERROR: " + e.toString());
                         }
-                      }
-                    },
-                  );
+                        """,
+                      );
+                      return KeyEventResult.handled;
+                    } else if (event.logicalKey ==
+                        LogicalKeyboardKey.arrowLeft) {
+                      print("DEBUG: Handling ArrowLeft from Flutter");
+                      _webViewController?.evaluateJavascript(
+                        source: """
+                        try {
+                          var el = document.getElementById('reader-content');
+                          if (el) {
+                             var page = Math.round(el.scrollLeft / el.clientWidth) - 1;
+                             if (window.snapToPage) {
+                                window.snapToPage(page);
+                             } else {
+                                console.log("ERROR: snapToPage not found");
+                             }
+                          } else {
+                             console.log("ERROR: reader-content not found");
+                          }
+                        } catch (e) {
+                          console.log("ERROR: " + e.toString());
+                        }
+                        """,
+                      );
+                      return KeyEventResult.handled;
+                    }
+                  }
+                  return KeyEventResult.ignored;
+                },
+                child: InAppWebView(
+                  key: ValueKey(
+                    _scrollMode,
+                  ), // Force rebuild when mode changes to apply paging settings
+                  initialSettings: InAppWebViewSettings(
+                    // ... existing settings
+                    transparentBackground: true,
+                    supportZoom: false,
+                    horizontalScrollBarEnabled: false,
+                    verticalScrollBarEnabled: false,
+                    isPagingEnabled: false,
+                    disableContextMenu: true,
+                    pageZoom: 1.0,
+                  ),
+                  onWebViewCreated: (controller) {
+                    _webViewController = controller;
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onTap',
+                      callback: (_) {
+                        _toggleControls();
+                        // Ensure Flutter focus is regained if needed
+                        if (!_focusNode.hasFocus) {
+                          _focusNode.requestFocus();
+                        }
+                      },
+                    );
 
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onNearEnd',
-                    callback: (args) {
-                      // Potential pre-loading trigger or end-of-chapter hint
-                    },
-                  );
+                    // Progress Handler (Granular)
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onScrollProgress',
+                      callback: (args) {
+                        if (args.isNotEmpty) {
+                          final cfi = args[0].toString();
+                          // Only update if changed to avoid spam
+                          if (cfi != _currentProgressCfi) {
+                            _currentProgressCfi = cfi; // Update local state
+                            _saveProgress(_currentChapterIndex, cfi);
+                          }
+                        }
+                      },
+                    );
 
-                  // Handle Chapter Navigation from JS (e.g. click next button or swipe past end)
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onNextChapter',
-                    callback: (args) => _onNextChapter(),
-                  );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onNearEnd',
+                      callback: (args) {
+                        // Potential pre-loading trigger or end-of-chapter hint
+                      },
+                    );
 
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onPrevChapter',
-                    callback: (args) => _onPrevChapter(),
-                  );
+                    // Handle Chapter Navigation from JS (e.g. click next button or swipe past end)
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onNextChapter',
+                      callback: (args) => _onNextChapter(),
+                    );
 
-                  controller.addJavaScriptHandler(
-                    handlerName: 'consoleLog',
-                    callback: (args) {
-                      print("JS_LOG: ${args.join(' ')}");
-                    },
-                  );
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onPrevChapter',
+                      callback: (args) => _onPrevChapter(),
+                    );
 
-                  // Selection & Highlight Handlers (Native Overlay)
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onSelectionChanged',
-                    callback: (args) {
-                      if (args.length >= 6) {
-                        final double left = (args[0] as num).toDouble();
-                        final double top = (args[1] as num).toDouble();
-                        final double width = (args[2] as num).toDouble();
-                        final double height = (args[3] as num).toDouble();
-                        final String text = args[4].toString();
-                        final String cfi = args[5].toString();
+                    controller.addJavaScriptHandler(
+                      handlerName: 'consoleLog',
+                      callback: (args) {
+                        print("JS_LOG: ${args.join(' ')}");
+                      },
+                    );
 
+                    // Selection & Highlight Handlers (Native Overlay)
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onSelectionChanged',
+                      callback: (args) {
+                        if (args.length >= 6) {
+                          final double left = (args[0] as num).toDouble();
+                          final double top = (args[1] as num).toDouble();
+                          final double width = (args[2] as num).toDouble();
+                          final double height = (args[3] as num).toDouble();
+                          final String text = args[4].toString();
+                          final String cfi = args[5].toString();
+
+                          setState(() {
+                            _selectionRect = Rect.fromLTWH(
+                              left,
+                              top,
+                              width,
+                              height,
+                            );
+                            _selectedText = text;
+                            _selectedCfi = cfi;
+                            _activeHighlightId = null;
+                          });
+                        }
+                      },
+                    );
+
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onSelectionCleared',
+                      callback: (args) {
                         setState(() {
-                          _selectionRect = Rect.fromLTWH(
-                            left,
-                            top,
-                            width,
-                            height,
-                          );
-                          _selectedText = text;
-                          _selectedCfi = cfi;
-                          _activeHighlightId = null;
-                        });
-                      }
-                    },
-                  );
-
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onSelectionCleared',
-                    callback: (args) {
-                      setState(() {
-                        _selectionRect = null;
-                        _selectedText = null;
-                        _selectedCfi = null;
-                        _activeHighlightId = null;
-                      });
-                    },
-                  );
-
-                  controller.addJavaScriptHandler(
-                    handlerName: 'onHighlightClicked',
-                    callback: (args) {
-                      if (args.length >= 5) {
-                        final String id = args[0].toString();
-                        final double left = (args[1] as num).toDouble();
-                        final double top = (args[2] as num).toDouble();
-                        final double width = (args[3] as num).toDouble();
-                        final double height = (args[4] as num).toDouble();
-                        print(
-                          "Flutter Highlight Click: $id Rect: $left,$top $width x $height",
-                        );
-                        setState(() {
-                          _activeHighlightId = id;
-                          _selectionRect = Rect.fromLTWH(
-                            left,
-                            top,
-                            width,
-                            height,
-                          );
+                          _selectionRect = null;
                           _selectedText = null;
                           _selectedCfi = null;
+                          _activeHighlightId = null;
                         });
-                      }
-                    },
-                  );
+                      },
+                    );
 
-                  _loadChapter(_currentChapterIndex);
-                },
+                    controller.addJavaScriptHandler(
+                      handlerName: 'onHighlightClicked',
+                      callback: (args) {
+                        if (args.length >= 5) {
+                          final String id = args[0].toString();
+                          final double left = (args[1] as num).toDouble();
+                          final double top = (args[2] as num).toDouble();
+                          final double width = (args[3] as num).toDouble();
+                          final double height = (args[4] as num).toDouble();
+                          print(
+                            "Flutter Highlight Click: $id Rect: $left,$top $width x $height",
+                          );
+                          setState(() {
+                            _activeHighlightId = id;
+                            _selectionRect = Rect.fromLTWH(
+                              left,
+                              top,
+                              width,
+                              height,
+                            );
+                            _selectedText = null;
+                            _selectedCfi = null;
+                          });
+                        }
+                      },
+                    );
+
+                    _loadChapter(_currentChapterIndex);
+                  },
+                ),
               ),
             ),
           ),
@@ -944,99 +1019,67 @@ class _ReaderScreenState extends ConsumerState<ReaderScreen> {
     }
   }
 
-  void _updateFontSize(double size) {
-    setState(() {
-      _fontSize = size;
-    });
-    ref.read(readerSettingsRepositoryProvider).setFontSize(size);
-    _webViewController?.evaluateJavascript(
-      source:
-          "document.body.style.setProperty('font-size', '${size}%', 'important'); null;",
-    );
-  }
-
-  void _toggleInputBlocking(bool blocked) {
-    _webViewController?.evaluateJavascript(
-      source: "setInputBlocked($blocked); null;",
-    );
-  }
-
-  void _showSettingsModal(BuildContext context) async {
-    // JS Blocking (The "Real" Fix)
-    _toggleInputBlocking(true);
-
-    await showModalBottomSheet(
+  void _showSettingsModal(BuildContext context) {
+    showModalBottomSheet(
       context: context,
+      backgroundColor: Colors.transparent,
       builder: (context) => ReaderSettingsModal(
         theme: _theme,
         scrollMode: _scrollMode,
         fontSize: _fontSize,
         fontFamily: _fontFamily,
+        sideMargin: _sideMargin,
+        twoColumnEnabled: _twoColumnEnabled,
         activeChapterIndex: _currentChapterIndex,
         totalChapters: _chapters.length,
-        onThemeChanged: (theme) {
-          setState(() {
-            _theme = theme;
-          });
-          ref.read(readerSettingsRepositoryProvider).setTheme(theme);
-
-          final textColor = _colorToHex(_getTextColor());
-          final bgColor = _colorToHex(_getScaffoldColor());
-          _webViewController?.evaluateJavascript(
-            source: "setTheme('$textColor', '$bgColor'); null;",
-          );
+        onThemeChanged: (theme) async {
+          setState(() => _theme = theme);
+          await ref.read(readerSettingsRepositoryProvider).setTheme(theme);
+          _loadChapter(_currentChapterIndex);
         },
         onScrollModeChanged: (mode) async {
-          // Attempt to capture current progress before switch
-          try {
-            final result = await _webViewController?.evaluateJavascript(
-              source:
-                  "window.getCurrentLocationPath ? window.getCurrentLocationPath() : null;",
+          setState(() => _scrollMode = mode);
+          await ref.read(readerSettingsRepositoryProvider).setScrollMode(mode);
+          _updateWebViewSettings();
+          _loadChapter(_currentChapterIndex);
+        },
+        onFontSizeChanged: (size) async {
+          setState(() => _fontSize = size);
+          await ref.read(readerSettingsRepositoryProvider).setFontSize(size);
+          _loadChapter(_currentChapterIndex);
+        },
+        onFontFamilyChanged: (family) async {
+          setState(() => _fontFamily = family);
+          await ref
+              .read(readerSettingsRepositoryProvider)
+              .setFontFamily(family);
+          _loadChapter(_currentChapterIndex);
+        },
+        onSideMarginChanged: (margin) async {
+          setState(() => _sideMargin = margin);
+          await ref
+              .read(readerSettingsRepositoryProvider)
+              .setSideMargin(margin);
+          _loadChapter(_currentChapterIndex);
+        },
+        onTwoColumnChanged: (enabled) async {
+          setState(() => _twoColumnEnabled = enabled);
+          await ref
+              .read(readerSettingsRepositoryProvider)
+              .setTwoColumnEnabled(enabled);
+          // Reloading chapter applies the class, but we need to ensure alignment runs
+          // Actually _loadChapter will re-render everything, and on 'load' it should run?
+          // But generateHtml injects the class.
+          // So let's load chapter first.
+          await _loadChapter(_currentChapterIndex);
+          // Just in case, force alignment after a short delay (for rendering)
+          Future.delayed(const Duration(milliseconds: 100), () {
+            _webViewController?.evaluateJavascript(
+              source: "if(window.alignColumns) window.alignColumns();",
             );
-            print("DEBUG: Mode Switch Capture Result: $result");
-            if (result != null &&
-                result.toString().isNotEmpty &&
-                result.toString() != 'null') {
-              _currentProgressCfi = result.toString();
-              _saveProgress(_currentChapterIndex, _currentProgressCfi);
-              print("DEBUG: Saved CFI for switch: $_currentProgressCfi");
-            } else {
-              print("DEBUG: Capture failed or empty. Result: $result");
-            }
-          } catch (e) {
-            print("Error capturing progress: $e");
-          }
-
-          setState(() {
-            _scrollMode = mode;
           });
-          ref.read(readerSettingsRepositoryProvider).setScrollMode(mode);
-          _updateWebViewSettings(); // Ensure WebView settings (paging) are updated
-          print(
-            "DEBUG: calling _loadChapter with override: $_currentProgressCfi",
-          );
-          _loadChapter(
-            _currentChapterIndex,
-            initialCfiOverride: _currentProgressCfi,
-          ); // Reload to apply CSS changes
-        },
-        onFontSizeChanged: (size) {
-          _updateFontSize(size);
-        },
-        onFontFamilyChanged: (family) {
-          setState(() {
-            _fontFamily = family;
-          });
-          ref.read(readerSettingsRepositoryProvider).setFontFamily(family);
-          // Use helper function which sets !important
-          _webViewController?.evaluateJavascript(
-            source: "setFontFamily('$family'); null;",
-          );
         },
       ),
     );
-
-    // Unblock JS
-    _toggleInputBlocking(false);
   }
 }

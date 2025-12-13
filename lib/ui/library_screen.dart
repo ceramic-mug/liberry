@@ -6,7 +6,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:liberry/utils/ios_file_utils.dart';
 import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
 
 import '../data/database.dart';
 import '../providers.dart';
@@ -953,6 +952,7 @@ class BookItem extends ConsumerWidget {
                   ),
                 ],
               ),
+              clipBehavior: Clip.antiAlias, // Ensure content doesn't overflow
               child: Stack(
                 fit: StackFit.expand,
                 children: [
@@ -1275,6 +1275,7 @@ class BookCoverImage extends ConsumerWidget {
           Widget imageWidget = Image.file(
             coverFile,
             fit: BoxFit.fill,
+            gaplessPlayback: true, // Prevent flickering
             errorBuilder: (context, error, stackTrace) {
               debugPrint('Image.file ERROR for "${book.title}": $error');
               return _buildPlaceholder();
@@ -1336,8 +1337,14 @@ class BookCoverImage extends ConsumerWidget {
       // Try in covers subdirectory
       final filename = p.basename(path);
       final newPath = p.join(docsPath, 'covers', filename);
-      if (File(newPath).existsSync()) {
-        return File(newPath);
+      final newFile = File(newPath);
+      if (newFile.existsSync()) {
+        final length = newFile.lengthSync();
+        if (length == 0) {
+          debugPrint('Cover file is empty (0 bytes): $newPath');
+          return null;
+        }
+        return newFile;
       }
     } catch (e) {
       debugPrint('_resolveCoverPathSync error: $e');

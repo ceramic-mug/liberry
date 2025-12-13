@@ -13,6 +13,10 @@ class ReaderSettingsModal extends StatefulWidget {
   final Function(ReaderScrollMode) onScrollModeChanged;
   final Function(double) onFontSizeChanged;
   final Function(String) onFontFamilyChanged;
+  final double sideMargin;
+  final Function(double) onSideMarginChanged;
+  final bool twoColumnEnabled;
+  final Function(bool) onTwoColumnChanged;
 
   const ReaderSettingsModal({
     super.key,
@@ -26,6 +30,10 @@ class ReaderSettingsModal extends StatefulWidget {
     required this.onScrollModeChanged,
     required this.onFontSizeChanged,
     required this.onFontFamilyChanged,
+    required this.sideMargin,
+    required this.onSideMarginChanged,
+    required this.twoColumnEnabled,
+    required this.onTwoColumnChanged,
   });
 
   @override
@@ -44,8 +52,15 @@ class _ReaderSettingsModalState extends State<ReaderSettingsModal> {
     _currentFontSize = widget.fontSize;
     _currentTheme = widget.theme;
     _currentScrollMode = widget.scrollMode;
+    _currentScrollMode = widget.scrollMode;
     _currentFontFamily = widget.fontFamily;
+    _currentSideMargin = widget.sideMargin;
+    _currentTwoColumnEnabled = widget.twoColumnEnabled;
   }
+
+  // Local state for smoother sliding
+  late double _currentSideMargin;
+  late bool _currentTwoColumnEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -54,163 +69,229 @@ class _ReaderSettingsModalState extends State<ReaderSettingsModal> {
 
     return Container(
       color: bgColor,
-      padding: const EdgeInsets.all(24),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Update active chapter
-          if (widget.activeChapterIndex >= 0 &&
-              widget.activeChapterIndex < widget.totalChapters)
-            Text(
-              'Chapter ${widget.activeChapterIndex + 1} of ${widget.totalChapters}',
-              style: TextStyle(color: textColor.withOpacity(0.7), fontSize: 12),
-            ),
-          const SizedBox(height: 4),
-          // Scroll Mode Toggle
-          Text(
-            'Scroll Mode',
-            style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.8,
+      ),
+      child: SingleChildScrollView(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _buildScrollModeButton(
-                context,
-                ReaderScrollMode.vertical,
-                'Vertical',
-                Icons.swap_vert,
-                textColor,
-              ),
-              _buildScrollModeButton(
-                context,
-                ReaderScrollMode.horizontal,
-                'Horizontal',
-                Icons.swap_horiz,
-                textColor,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
+              // Update active chapter
+              if (widget.activeChapterIndex >= 0 &&
+                  widget.activeChapterIndex < widget.totalChapters)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    'Chapter ${widget.activeChapterIndex + 1} of ${widget.totalChapters}',
+                    style: TextStyle(
+                      color: textColor.withOpacity(0.7),
+                      fontSize: 12,
+                    ),
+                  ),
+                ),
 
-          Text(
-            'Theme',
-            style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildThemeButton(
-                context,
-                ReaderTheme.light,
-                'Light',
-                Icons.light_mode,
+              // Scroll Mode
+              Text(
+                'Scroll Mode',
+                style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
               ),
-              _buildThemeButton(
-                context,
-                ReaderTheme.sepia,
-                'Sepia',
-                Icons.chrome_reader_mode,
-              ),
-              _buildThemeButton(
-                context,
-                ReaderTheme.dark,
-                'Dark',
-                Icons.dark_mode,
-              ),
-            ],
-          ),
-          const SizedBox(height: 24),
-          Text(
-            'Font Size',
-            style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Decrease Font Size
-              InkWell(
-                onTap: () {
-                  if (_currentFontSize > 50) {
-                    setState(() {
-                      _currentFontSize -= 10;
-                    });
-                    widget.onFontSizeChanged(_currentFontSize);
-                  }
-                },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildScrollModeButton(
+                      context,
+                      ReaderScrollMode.vertical,
+                      'Vertical',
+                      Icons.swap_vert,
+                      textColor,
+                    ),
                   ),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildScrollModeButton(
+                      context,
+                      ReaderScrollMode.horizontal,
+                      'Horizontal',
+                      Icons.swap_horiz,
+                      textColor,
+                    ),
                   ),
-                  child: Text(
-                    'A-',
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              Text(
+                'Theme',
+                style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildThemeButton(
+                      context,
+                      ReaderTheme.light,
+                      'Light',
+                      Icons.light_mode,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildThemeButton(
+                      context,
+                      ReaderTheme.sepia,
+                      'Sepia',
+                      Icons.chrome_reader_mode,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildThemeButton(
+                      context,
+                      ReaderTheme.dark,
+                      'Dark',
+                      Icons.dark_mode,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Font Size & Family Combined loosely or just tighter
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'Font Size',
                     style: TextStyle(
                       color: textColor,
-                      fontSize: 16,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                ),
+                  Row(
+                    children: [
+                      InkWell(
+                        onTap: () {
+                          if (_currentFontSize > 50) {
+                            setState(() => _currentFontSize -= 10);
+                            widget.onFontSizeChanged(_currentFontSize);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.remove, color: textColor, size: 16),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        child: Text(
+                          '${_currentFontSize.toInt()}%',
+                          style: TextStyle(color: textColor),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () {
+                          if (_currentFontSize < 300) {
+                            setState(() => _currentFontSize += 10);
+                            widget.onFontSizeChanged(_currentFontSize);
+                          }
+                        },
+                        child: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.grey),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: Icon(Icons.add, color: textColor, size: 16),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              const SizedBox(width: 32),
-              // Increase Font Size
-              InkWell(
-                onTap: () {
-                  if (_currentFontSize < 300) {
-                    setState(() {
-                      _currentFontSize += 10;
-                    });
-                    widget.onFontSizeChanged(_currentFontSize);
-                  }
+              const SizedBox(height: 16),
+
+              Text(
+                'Font Family',
+                style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildFontButton(
+                      context,
+                      'Serif',
+                      'Georgia, serif',
+                      textColor,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _buildFontButton(
+                      context,
+                      'Sans',
+                      'Helvetica, Arial, sans-serif',
+                      textColor,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Side Margin Slider
+              Text(
+                'Side Margins',
+                style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
+              ),
+              Slider(
+                value: _currentSideMargin,
+                min: 0,
+                max: 100,
+                divisions: 20,
+                label: _currentSideMargin.round().toString(),
+                activeColor: Colors.blue,
+                inactiveColor: Colors.grey.withOpacity(0.3),
+                onChanged: (value) {
+                  setState(() {
+                    _currentSideMargin = value;
+                  });
+                  widget.onSideMarginChanged(value);
                 },
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 20,
-                    vertical: 10,
-                  ),
-                  decoration: BoxDecoration(
-                    border: Border.all(color: Colors.grey),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    'A+',
+              ),
+
+              if (_currentScrollMode == ReaderScrollMode.horizontal) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  dense: true,
+                  title: Text(
+                    'Two-Column (Landscape)',
                     style: TextStyle(
                       color: textColor,
-                      fontSize: 20,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
+                  value: _currentTwoColumnEnabled,
+                  activeColor: Colors.blue,
+                  onChanged: (value) {
+                    setState(() {
+                      _currentTwoColumnEnabled = value;
+                    });
+                    widget.onTwoColumnChanged(value);
+                  },
                 ),
-              ),
+              ],
             ],
           ),
-          const SizedBox(height: 24),
-          Text(
-            'Font Family',
-            style: TextStyle(color: textColor, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: [
-              _buildFontButton(context, 'Serif', 'Georgia, serif', textColor),
-              _buildFontButton(
-                context,
-                'Sans',
-                'Helvetica, Arial, sans-serif',
-                textColor,
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

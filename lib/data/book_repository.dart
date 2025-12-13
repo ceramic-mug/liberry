@@ -223,6 +223,7 @@ class BookRepository {
         ReadingProgressCompanion(
           cfi: Value(cfi),
           lastReadAt: Value(DateTime.now()),
+          updatedAt: Value(DateTime.now()),
         ),
       );
     } else {
@@ -331,7 +332,10 @@ class BookRepository {
 
   Future<void> updateHighlightCharacter(String quoteId, String? characterId) {
     return (_db.update(_db.quotes)..where((t) => t.id.equals(quoteId))).write(
-      QuotesCompanion(characterId: Value(characterId)),
+      QuotesCompanion(
+        characterId: Value(characterId),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
   }
 
@@ -344,9 +348,9 @@ class BookRepository {
   }
 
   Future<void> updateBook(String id, BooksCompanion companion) {
-    return (_db.update(
-      _db.books,
-    )..where((t) => t.id.equals(id))).write(companion);
+    return (_db.update(_db.books)..where((t) => t.id.equals(id))).write(
+      companion.copyWith(updatedAt: Value(DateTime.now())),
+    );
   }
 
   Future<void> updateBookStatus(String id, String status) {
@@ -491,13 +495,19 @@ class BookRepository {
 
   Future<void> updateNote(String noteId, String content) {
     return (_db.update(_db.bookNotes)..where((t) => t.id.equals(noteId))).write(
-      BookNotesCompanion(content: Value(content)),
+      BookNotesCompanion(
+        content: Value(content),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
   }
 
   Future<void> updateNoteQuote(String noteId, String? quoteId) {
     return (_db.update(_db.bookNotes)..where((t) => t.id.equals(noteId))).write(
-      BookNotesCompanion(quoteId: Value(quoteId)),
+      BookNotesCompanion(
+        quoteId: Value(quoteId),
+        updatedAt: Value(DateTime.now()),
+      ),
     );
   }
 }

@@ -75,7 +75,7 @@ body.mode-horizontal {
   flex-direction: column;
   justify-content: center;
 
-  /* Safe Area Padding with Fallbacks + Extra Margin */
+  /* Safe Area Padding with Fallbacks */
   padding-top: calc(env(safe-area-inset-top, 60px) + 3vh);
   padding-bottom: calc(env(safe-area-inset-bottom, 60px) + 3vh);
   padding-left: 0;
@@ -91,16 +91,20 @@ body.mode-horizontal #reader-content {
   height: 100%;
   /* Critical for columns to calculate breaks */
 
+  /* Apply Side Margins Here */
+  padding-left: var(--side-margin, 20px);
+  padding-right: var(--side-margin, 20px);
+  box-sizing: border-box;
+
   overflow: hidden;
 
   /* CSS Columns */
-  column-width: 100vw;
+  /* Remove column-width 100vw, let it fill available space */
+  /* column-width: 100vw; */
   column-gap: 0;
   column-fill: auto;
 
   margin: 0;
-  padding: 0;
-  box-sizing: border-box;
 }
 
 /* Hide arrow in horizontal mode */
@@ -127,9 +131,33 @@ body.mode-horizontal h5,
 body.mode-horizontal h6,
 body.mode-horizontal li,
 body.mode-horizontal div {
-  padding-left: 20px;
-  padding-right: 20px;
+  /* Padding moved to container for correct column gaps */
+  padding: 0;
   box-sizing: border-box;
+}
+
+/* Two Column Layout (Landscape Only) */
+@media (orientation: landscape) {
+  body.mode-horizontal.two-column-enabled #reader-content {
+    column-count: 2;
+    /* Gap = Left Padding + Right Padding is REQUIRED for 100vw pagination to align */
+    /* User requested 'gap = setting'. So we must set Inner Padding = Setting / 2 */
+    padding-left: calc(var(--side-margin, 20px) / 2);
+    padding-right: calc(var(--side-margin, 20px) / 2);
+
+    column-gap: var(--side-margin, 20px);
+    column-fill: auto;
+    /* Fill first column fully before moving to second. Prevents weird balancing on short chapters. */
+
+    column-width: auto;
+    height: 100%;
+    /* Ensure container fills height */
+  }
+
+  /* Reset margins for 2-col to avoid double spacing if needed,
+     but keeping them is usually better for readability per column.
+     Maybe reduce slightly if too wide?
+     Let's keep user preference for now. */
 }
 
 body.mode-horizontal img {

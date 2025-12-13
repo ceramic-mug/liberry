@@ -79,6 +79,8 @@ class ReaderHtmlGenerator {
     String? endAnchor,
     bool isGutenberg = false,
     bool isInteractionLocked = false,
+    double sideMargin = 20.0,
+    bool twoColumnEnabled = false,
   }) async {
     // 1. Process Content
     String processedContent = processChapterContent(
@@ -155,6 +157,9 @@ class ReaderHtmlGenerator {
       document.documentElement.style.setProperty('--selection-color', '$selectionColor');
       document.documentElement.style.setProperty('--highlight-color', '$highlightColor');
       document.documentElement.style.setProperty('--highlight-border', '$highlightBorder');
+      
+      // New Settings
+      document.documentElement.style.setProperty('--side-margin', '${sideMargin}px');
     ''';
 
     // 4. Inject
@@ -163,6 +168,9 @@ class ReaderHtmlGenerator {
       bodyClasses = 'mode-vertical';
     } else {
       bodyClasses = 'mode-horizontal';
+      if (twoColumnEnabled) {
+        bodyClasses += ' two-column-enabled';
+      }
     }
 
     String finalHtml = template
@@ -171,7 +179,20 @@ class ReaderHtmlGenerator {
         .replaceAll('{{CHAPTER_INDEX}}', currentChapterIndex.toString())
         .replaceAll('{{CHAPTER_CONTENT}}', processedContent)
         .replaceAll('/* {{CONFIG_JS}} */', configJs)
-        .replaceAll('/* {{READER_JS}} */', js);
+        .replaceAll('/* {{READER_JS}} */', '''
+          $js
+          // Trigger initial alignment check
+          if (window.onContentChanged) window.onContentChanged();
+          // Also set up a periodic check for the first second to catch layout settling
+          /*
+          var checkCount = 0;
+          var interval = setInterval(function() {
+             // Alignment removed
+             checkCount++;
+             if (checkCount > 5) clearInterval(interval);
+          }, 200);
+          */
+        ''');
 
     return finalHtml;
   }

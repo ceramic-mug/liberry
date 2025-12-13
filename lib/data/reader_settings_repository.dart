@@ -12,6 +12,8 @@ class ReaderSettingsRepository {
   static const _keyScrollMode = 'reader_scroll_mode';
   static const _keyFontSize = 'reader_font_size';
   static const _keyFontFamily = 'reader_font_family';
+  static const _keySideMargin = 'reader_side_margin';
+  static const _keyTwoColumnEnabled = 'reader_two_column_enabled';
 
   ReaderTheme getTheme() {
     final index = _prefs.getInt(_keyTheme) ?? ReaderTheme.light.index;
@@ -46,6 +48,23 @@ class ReaderSettingsRepository {
 
   Future<void> setFontFamily(String family) async {
     await _prefs.setString(_keyFontFamily, family);
+  }
+
+  double getSideMargin() {
+    // Default 20px
+    return _prefs.getDouble(_keySideMargin) ?? 20.0;
+  }
+
+  Future<void> setSideMargin(double margin) async {
+    await _prefs.setDouble(_keySideMargin, margin);
+  }
+
+  bool getTwoColumnEnabled() {
+    return _prefs.getBool(_keyTwoColumnEnabled) ?? false;
+  }
+
+  Future<void> setTwoColumnEnabled(bool enabled) async {
+    await _prefs.setBool(_keyTwoColumnEnabled, enabled);
   }
 }
 
