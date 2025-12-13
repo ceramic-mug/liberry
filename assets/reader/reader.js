@@ -42,6 +42,48 @@ function isHorizontal() {
     return document.body.classList.contains('mode-horizontal');
 }
 
+function fixColumnLayout() {
+    // 1. Remove existing spacer to get clean measurement
+    var existingSpacer = document.getElementById('column-spacer');
+    if (existingSpacer) {
+        existingSpacer.parentNode.removeChild(existingSpacer);
+    }
+
+    // 2. Check Prerequisites
+    // Must be Horizontal + Two-Column + Landscape
+    if (!isHorizontal()) return;
+    if (!document.body.classList.contains('two-column-enabled')) return;
+
+    // Check orientation (Landscape)
+    var w = window.innerWidth;
+    var h = window.innerHeight;
+    if (h >= w) return;
+
+    var container = document.getElementById('reader-content');
+    if (!container) return;
+
+    // 3. Measure
+    var scrollW = container.scrollWidth;
+    var clientW = container.clientWidth;
+
+    if (clientW === 0) return;
+
+    var remainder = scrollW % clientW;
+
+    // We expect remainder to be close to 0 (full pages)
+    // If remainder is significant (e.g. > 50px), it means we have a partial page (odd column)
+    if (remainder > 50 && remainder < (clientW - 10)) {
+        console.log("Fixing Column Layout: Odd columns detected (Remainder: " + remainder + ")");
+        var spacer = document.createElement('div');
+        spacer.id = 'column-spacer';
+        spacer.style.breakBefore = 'column';
+        spacer.style.width = '1px';
+        spacer.style.height = '1px';
+        spacer.style.visibility = 'hidden';
+        container.appendChild(spacer);
+    }
+}
+
 /* ---------------- POLYFILLS & UTILS ---------------- */
 var oldLog = console.log;
 console.log = function (message) {
@@ -144,6 +186,7 @@ function init() {
     // Initialize Observers based on Mode
     try {
         if (isHorizontal()) {
+            fixColumnLayout();
             setupHorizontalObservers();
         } else {
             setupVerticalObservers();
@@ -488,6 +531,7 @@ function setupHorizontalObservers() {
 
         resizeTimer = setTimeout(function () {
             console.log("Resize finished. Restoring location...");
+            fixColumnLayout();
 
             // Re-snap or restore.
             // Since column width changed, scrollLeft is likely invalid. 
