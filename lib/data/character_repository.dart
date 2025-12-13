@@ -1,5 +1,8 @@
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as p;
+import 'dart:io';
 import 'database.dart';
 
 class CharacterRepository {
@@ -111,12 +114,28 @@ class CharacterRepository {
 
     joinedQuery.orderBy([OrderingTerm(expression: _db.books.title)]);
 
-    return joinedQuery.watch().map((rows) {
+    return joinedQuery.watch().asyncMap((rows) async {
+      final appDir = await getApplicationDocumentsDirectory();
+      final docsPath = appDir.path;
+
       return rows.map((row) {
-        return QuoteWithBook(
-          row.readTable(_db.quotes),
-          row.readTable(_db.books),
-        );
+        var book = row.readTable(_db.books);
+
+        // Resolve Path Logic (Duplicate of BookRepository)
+        if (p.isAbsolute(book.filePath)) {
+          final file = File(book.filePath);
+          if (!file.existsSync()) {
+            final basename = p.basename(book.filePath);
+            final newPath = p.join(docsPath, basename);
+            if (File(newPath).existsSync()) {
+              book = book.copyWith(filePath: newPath);
+            }
+          }
+        } else {
+          book = book.copyWith(filePath: p.join(docsPath, book.filePath));
+        }
+
+        return QuoteWithBook(row.readTable(_db.quotes), book);
       }).toList();
     });
   }
@@ -151,12 +170,28 @@ class CharacterRepository {
 
     joinedQuery.orderBy([OrderingTerm(expression: _db.characters.name)]);
 
-    return joinedQuery.watch().map((rows) {
+    return joinedQuery.watch().asyncMap((rows) async {
+      final appDir = await getApplicationDocumentsDirectory();
+      final docsPath = appDir.path;
+
       return rows.map((row) {
-        return CharacterWithBook(
-          row.readTable(_db.characters),
-          row.readTable(_db.books),
-        );
+        var book = row.readTable(_db.books);
+
+        // Resolve Path Logic
+        if (p.isAbsolute(book.filePath)) {
+          final file = File(book.filePath);
+          if (!file.existsSync()) {
+            final basename = p.basename(book.filePath);
+            final newPath = p.join(docsPath, basename);
+            if (File(newPath).existsSync()) {
+              book = book.copyWith(filePath: newPath);
+            }
+          }
+        } else {
+          book = book.copyWith(filePath: p.join(docsPath, book.filePath));
+        }
+
+        return CharacterWithBook(row.readTable(_db.characters), book);
       }).toList();
     });
   }
