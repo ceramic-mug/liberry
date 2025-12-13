@@ -884,7 +884,7 @@ class BookCollectionsData {
   // Standalone collection for the Home/Discover screen
   static final BookCollection top100 = BookCollection(
     title: 'Top 100 Challenge',
-    subtitle: 'Classic and Key Literature',
+    subtitle: 'Read through the great classics',
     icon: Icons.library_books, // Stack of books
     color: Colors.amber,
     groupingLabel: 'Status',

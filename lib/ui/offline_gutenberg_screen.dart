@@ -5,6 +5,7 @@ import '../data/remote/remote_book.dart';
 import '../data/local/author_data.dart';
 import '../providers.dart';
 import 'common/remote_book_tile.dart';
+import 'author_books_screen.dart';
 
 class OfflineGutenbergScreen extends ConsumerStatefulWidget {
   const OfflineGutenbergScreen({super.key});
@@ -266,8 +267,12 @@ class _OfflineGutenbergScreenState extends ConsumerState<OfflineGutenbergScreen>
                   leading: const Icon(Icons.person_outline),
                   title: Text(author),
                   onTap: () {
-                    _searchController.text = author;
-                    _performSearch(author);
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AuthorBooksScreen(authorName: author),
+                      ),
+                    );
                   },
                 ),
               );
